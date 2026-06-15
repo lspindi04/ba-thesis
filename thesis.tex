@@ -4,14 +4,14 @@
     a4paper,
     sfdefaults=false,
     toc=chapterentrywithdots,
-    twoside,openright,
+    oneside,openany,
     titlepage,
     parskip=half,
-    headings=normal,  % reduces heading size
+    headings=normal,
     listof=totoc,
     bibliography=totoc,
     index=totoc,
-    captions=tableheading,  % caption below table
+    captions=tableheading,
     chapterprefix,
     listof=flat,
     final
@@ -20,14 +20,14 @@
 
 % details about your thesis
 \newcommand{\titel}{My very fancy thesis title.}
-\newcommand{\artderarbeit}{Bachelorarbeit}  % {Bachelorarbeit,Masterarbeit}
+\newcommand{\artderarbeit}{Bachelorarbeit}
 \newcommand{\autor}{Georg Simon Ohm}
-\newcommand{\studiengang}{Informatik}  % {Informatik,Wirtschaftsinformatik,Medieninformatik}
-\newcommand{\matrikelnr}{123\,4567}
-\newcommand{\erstgutachter}{Prof.\,Dr.~Korbinian Riedhammer}
-\newcommand{\zweitgutachter}{Prof.\,Dr.~Bartosz von\,Rymon\,Lipinski}
-\newcommand{\betreuer}{M.Sc.\,~Martina Schmidt}
-\newcommand{\unternehmen}{Musterfirma GmbH}
+\newcommand{\studiengang}{Informatik}
+\newcommand{\matrikelnr}{3728783}
+\newcommand{\erstgutachter}{Prof.\,Dr.~Matthias Teßmann}
+\newcommand{\zweitgutachter}{Prof.\,Dr.~Matthias Meitner}
+\newcommand{\betreuer}{Jonas Krammer}
+\newcommand{\unternehmen}{infoteam Software AG}
 \newcommand{\logo}{figures/TH-Nuernberg-RGB.png}
 \newcommand{\keywords}{hot, fuzz}
  
@@ -52,7 +52,7 @@
 \usepackage[T1]{fontenc}
 \usepackage{lmodern,relsize,textcomp,csquotes}
 \usepackage{amsmath,amsfonts}
-\usepackage[ngerman,english]{babel}  % flip for German thesis
+\usepackage[ngerman]{babel}  % flip for German thesis
 \usepackage[final]{graphicx}
 \usepackage{setspace,geometry,xcolor}
 \usepackage{makeidx}
@@ -139,17 +139,19 @@
 \setcounter{tocdepth}{2}  % ...but don't include them in toc
 
 \frontmatter
-\include{cover}\cleardoublepage
+\include{cover}\clearpage
 
 % download the following form (requires VPN) and complete it (hit save in your editor)
 % https://www.th-nuernberg.de/fileadmin/global/Public_Docs/SB/SB_0009_FO_Pruefungsrechtliche_Erklaerung_und_Erklaerung_zur_Veroeffentlichung_der_Abschlussarbeit_public.pdf
 %\includepdf{SB_0009_FO_Pruefungsrechtliche_Erklaerung_und_Erklaerung_zur_Veroeffentlichung_der_Abschlussarbeit_public.pdf}\cleardoublepage
 
-\include{content/0_abstract}\cleardoublepage
+\include{content/0_abstract}\clearpage
 
 \tableofcontents
 
+
 \mainmatter
+\include{content/vorwort}
 \include{content/1_intro}
 \include{content/2_data}
 \include{content/3_method}
@@ -163,16 +165,16 @@
 
 \backmatter
 \listoffigures
-\cleardoublepage
+\clearpage
 
 \listoftables
-\cleardoublepage
+\clearpage
 
 \renewcommand{\lstlistlistingname}{List of Listings}  % change for German thesis
 \lstlistoflistings
-\cleardoublepage
+\clearpage
 
-\bibliographystyle{wmaainf}
+\bibliographystyle{IEEEtran}
 \bibliography{refs}
 
 \printnoidxglossaries
