@@ -1,6 +1,57 @@
 \chapter{Einleitung}\label{ch:intro}
 
-Diese Arbeit befasst sich mit dem Konzept eines Device-Integration-Plugins. 
-Dazu wird der theoretische Ansatz zunächst untersucht und evaluiert.
-Anschließend wird ein Konzept zur praxisnahen Implementierung eines solchen Plugins für die Middleware zenLAB erstellt und beschrieben.
-Die Middleware zenLAB ermöglicht die Integration von Geräten in ein übergeordnetes System, um eine nahtlose Kommunikation und Interaktion zwischen verschiedenen Komponenten zu gewährleisten.
+Diese Arbeit befasst sich mit der Entwicklung und Konzeption eines Device-Integration-Plugins für die Middleware zenLAB. Dabei wird zunächst untersucht, welche Anforderungen an eine einheitliche Integration heterogener Laborgeräte bestehen. Anschließend wird ein Konzept für ein Plugin erarbeitet, das unterschiedliche Laborgeräte über verschiedene Kommunikationsschnittstellen an zenLAB anbinden kann. Auf dieser Grundlage erfolgt die Umsetzung eines praxisnahen Ansatzes, der die bisherige gerätespezifische Integration durch einzelne DeviceAgents vereinfachen soll.
+
+Bei zenLAB handelt es sich um ein von der infoteam Software AG entwickeltes Middleware-Framework, das die Integration von Geräten in ein übergeordnetes System ermöglicht. Ziel ist es, eine nahtlose Kommunikation und Interaktion zwischen verschiedenen Komponenten sicherzustellen und Arbeitsabläufe in Laborumgebungen zu automatisieren \cite{infoteamLifeScience}.
+
+Die infoteam Software AG ist ein mittelständisches Unternehmen mit Hauptsitz in Bubenreuth, das seit über 40 Jahren Softwaredienstleistungen in Form von regulierter und kundenspezifischer Software anbietet. Das Unternehmen ist unter anderem in den Bereichen Industry, Infrastructure, Life Science, Maschinenbau, Public Service und Defense tätig. Die Kernkompetenzen liegen insbesondere in der Entwicklung von Embedded Software, Middleware sowie klassischer und normkonformer Anwendungssoftware im regulierten Umfeld \cite{infoteamUnternehmen}.
+
+\section{Problemstellung}
+
+Die Digitalisierung schreitet seit Jahren kontinuierlich voran und hat Auswirkungen auf Gesellschaft, Bildung und Wirtschaft. Während die Digitalisierung in der Industrie häufig mit dem Begriff Industrie 4.0 verbunden wird, wird im Laborbereich zunehmend vom Labor 4.0 gesprochen. Das Fraunhofer-Institut für Produktionstechnologie IPT beschreibt Labor 4.0 als Entwicklung hin zu modernen, digitalisierten und automatisierten Laborumgebungen, in denen klassische Laborprozesse zunehmend vernetzt, flexibel und datenbasiert gestaltet werden \cite{fraunhoferLabor40}. In Anlehnung an Industrie 4.0 soll damit auch im Labor eine möglichst umfassende Digitalisierung und Automatisierung ermöglicht werden.
+
+Die infoteam Software AG hat hierfür das Middleware-Framework zenLAB entwickelt, um Arbeitsabläufe in Laboren zu automatisieren. Dies erfolgt durch die Steuerung und Vernetzung von Laborgeräten über zenLAB sowie durch die Realisierung einer durchgängigen Datenbasis über mehrere Ebenen hinweg, vom Laborgerät bis zur Benutzeroberfläche.
+
+Eine zentrale Herausforderung besteht dabei in der Integration unterschiedlicher Laborgeräte. Aktuell muss für jedes Gerät ein eigener sogenannter DeviceAgent entwickelt werden, der die gerätespezifische Kommunikation übernimmt und das jeweilige Gerät an zenLAB anbindet. Dieses Vorgehen ist mit einem hohen Entwicklungs- und Wartungsaufwand verbunden, da sich Kommunikationsprotokolle, Schnittstellen und Geräteeigenschaften je nach Hersteller und Gerätetyp unterscheiden können. Zusätzlich erschwert die individuelle Implementierung einzelner DeviceAgents die Wiederverwendbarkeit bestehender Lösungen und führt dazu, dass neue Geräte nur mit entsprechendem Anpassungsaufwand in das System integriert werden können.
+
+Aus dieser Problemstellung ergibt sich der Bedarf an einem einheitlichen Device-Integration-Plugin, das die Anbindung verschiedener Geräte vereinfachen und standardisieren soll. Ziel ist es, wiederkehrende Integrationsaufgaben zu abstrahieren und eine flexible Grundlage zu schaffen, auf deren Basis Geräte mit geringerem Implementierungsaufwand in zenLAB eingebunden werden können.
+
+\section{Fragestellungen}
+
+Aus der beschriebenen Problemstellung ergibt sich die zentrale Fragestellung, wie ein einheitliches Device-Integration-Plugin für zenLAB gestaltet werden kann, um heterogene Laborgeräte über unterschiedliche Kommunikationsschnittstellen anzubinden. Dabei sollen sowohl die Anforderungen an eine solche Lösung als auch die konzeptionelle und technische Umsetzung betrachtet werden.
+
+Im Rahmen dieser Arbeit werden daher folgende Fragestellungen untersucht:
+
+\begin{itemize}
+\item Welche funktionalen und technischen Anforderungen bestehen an die einheitliche Integration heterogener Laborgeräte in das zenLAB-Framework?
+\item Wie kann ein Device-Integration-Plugin für zenLAB konzipiert und umgesetzt werden, das heterogene Laborgeräte über unterschiedliche Kommunikationsschnittstellen einheitlich anbindet?
+\item Inwiefern vereinfacht das entwickelte Plugin die Anbindung neuer Laborgeräte im Vergleich zur bisherigen gerätespezifischen Integration?
+\end{itemize}
+
+Die erste Fragestellung dient dazu, die Anforderungen an eine allgemeine Geräteintegration zu identifizieren. Dabei werden sowohl funktionale Aspekte, wie die Steuerung von Geräten und die Verarbeitung von Gerätedaten, als auch technische Aspekte, wie Kommunikationsschnittstellen, Konfigurierbarkeit und Erweiterbarkeit, betrachtet.
+
+Die zweite Fragestellung befasst sich mit der Konzeption und Umsetzung des Device-Integration-Plugins. Im Mittelpunkt steht hierbei die Frage, wie ein Plugin aufgebaut sein muss, um unterschiedliche Laborgeräte über verschiedene Schnittstellen anzubinden und gleichzeitig eine einheitliche Verwendung innerhalb von zenLAB zu ermöglichen.
+
+Die dritte Fragestellung betrachtet den Nutzen des entwickelten Ansatzes im Vergleich zur bisherigen Integration über gerätespezifische DeviceAgents. Dabei wird untersucht, inwiefern durch das Plugin wiederkehrende Integrationsaufgaben reduziert, bestehende Komponenten wiederverwendet und neue Geräte mit geringerem Implementierungsaufwand angebunden werden können.
+
+\section{Zielsetzung}
+
+Ziel dieser Arbeit ist die Entwicklung und Konzeption eines Device-Integration-Plugins für zenLAB, das eine einheitliche Anbindung heterogener Laborgeräte ermöglicht. Dabei soll insbesondere untersucht werden, wie sich gerätespezifische Eigenschaften und unterschiedliche Kommunikationsschnittstellen so abstrahieren lassen, dass neue Geräte nicht mehr vollständig individuell über separate DeviceAgents integriert werden müssen.
+
+Das Plugin soll eine flexible Grundlage für die Geräteintegration bereitstellen und wiederkehrende Aufgaben der Kommunikation, Konfiguration und Datenverarbeitung bündeln. Dadurch soll der Entwicklungsaufwand bei der Anbindung neuer Geräte reduziert und die Wiederverwendbarkeit bestehender Integrationslogik erhöht werden.
+
+Neben der konzeptionellen Betrachtung wird im Rahmen der Arbeit auch eine prototypische Umsetzung betrachtet. Diese dient dazu, die praktische Umsetzbarkeit des entwickelten Konzepts zu prüfen und den Ansatz anhand eines konkreten Integrationsszenarios zu bewerten.
+
+\section{Aufbau der Arbeit}
+
+Die Arbeit gliedert sich in mehrere Kapitel. Nach der Einleitung werden zunächst die notwendigen Grundlagen beschrieben. Dazu gehören die Digitalisierung im Laborumfeld, das Konzept Labor 4.0, Middleware-Systeme sowie die bisherige Geräteintegration über DeviceAgents in zenLAB.
+
+Anschließend erfolgt eine Anforderungsanalyse. In diesem Kapitel werden die funktionalen und technischen Anforderungen an ein einheitliches Device-Integration-Plugin herausgearbeitet. Dabei werden insbesondere die Anforderungen an Kommunikationsschnittstellen, Konfigurierbarkeit, Erweiterbarkeit und Wiederverwendbarkeit betrachtet.
+
+Darauf aufbauend wird das Konzept des Device-Integration-Plugins vorgestellt. Dieses Kapitel beschreibt die grundlegende Architektur, die vorgesehenen Komponenten sowie die Abstraktion gerätespezifischer Funktionen. Außerdem wird erläutert, wie unterschiedliche Kommunikationsschnittstellen in das Plugin eingebunden werden können.
+
+Im Anschluss daran wird die Implementierung des entwickelten Konzepts beschrieben. Dabei werden die umgesetzten Komponenten, die technische Einbindung in zenLAB sowie die beispielhafte Anbindung eines Laborgeräts dargestellt.
+
+Die Evaluation untersucht anschließend, inwiefern das entwickelte Plugin die Integration neuer Laborgeräte im Vergleich zur bisherigen gerätespezifischen Umsetzung vereinfacht. Dabei werden insbesondere der Implementierungsaufwand, die Wiederverwendbarkeit und die Erweiterbarkeit betrachtet.
+
+Abschließend werden die Ergebnisse der Arbeit zusammengefasst und die Forschungsfragen beantwortet. Darüber hinaus wird ein Ausblick auf mögliche Erweiterungen und zukünftige Entwicklungen des Device-Integration-Plugins gegeben.
