@@ -1,19 +1,211 @@
-\chapter{Grundlagen}
+\chapter{Grundlagen}\label{ch:grundlagen}
 
-\section{zenLAB}
-\subsection{Ziel und Einsatzbereich}
-\subsection{Grundlegende Architektur}
+Dieses Kapitel beschreibt die fachlichen und technischen Grundlagen, die für die Entwicklung des Device-Integration-Plugins benötigt werden. Zunächst werden zenLAB und die bestehende Systemlandschaft mit DeviceAgents, AgentManager, TreeNode-Modell und Clientzugriff erläutert. Anschließend folgen grundlegende Konzepte zur dynamischen Geräteintegration, zur Kommunikation verteilter Komponenten und zur Verarbeitung von Ereignissen und Subscriptions. Den Abschluss bilden Architekturprinzipien und Kommunikationstechnologien, die für die spätere Konzeption relevant sind. Konkrete Entwurfsentscheidungen des zu entwickelnden Plugins werden erst in Kapitel~4 behandelt.
 
-\section{Geräteintegration über DeviceAgents}
-\subsection{Aufgabe eines DeviceAgents}
-\subsection{Aktuelle Umsetzung im Showcase-Projekt}
-\subsection{Grenzen der bisherigen Umsetzung}
+\section{zenLAB und bestehende Systemlandschaft}
 
-\section{Kommunikationsschnittstellen von Laborgeräten}
-\subsection{Serielle Kommunikation}
-\subsection{Netzwerkbasierte Kommunikation}
-\subsection{Dateibasierte Kommunikation}
+\subsection{Middleware- und Plugin-Architektur}
 
-\section{Relevante Entwurfsmuster und Architekturkonzepte}
-\subsection{Adapter Pattern}
-\subsection{Plugin-Architektur}
+zenLAB ist ein von der infoteam Software AG entwickeltes Middleware-Framework für vernetzte digitale Labore \cite{infoteamLifeScience}. Eine Middleware bildet eine vermittelnde Softwareschicht zwischen technisch unterschiedlichen Komponenten. Im betrachteten Anwendungsfall trennt sie die gerätenahe Kommunikation von den Anwendungen, die Gerätefunktionen verwenden. Dadurch muss eine Clientanwendung weder das herstellerspezifische Protokoll noch die konkrete Verbindung eines Laborgeräts kennen.
+
+Die Kapselung technischer Unterschiede ist für Laborumgebungen besonders relevant. Geräte verschiedener Hersteller können ihre Funktionen über serielle Verbindungen, Netzwerkprotokolle, proprietäre Bibliotheken oder standardisierte Schnittstellen bereitstellen. Ohne eine gemeinsame Vermittlungsschicht müsste jede übergeordnete Anwendung diese Unterschiede selbst behandeln. zenLAB stellt deshalb gemeinsame Strukturen und Dienste bereit, über die Gerätefunktionen in übergeordneten Anwendungen und automatisierten Abläufen verwendet werden können.
+
+Die Architektur von zenLAB ist modular aufgebaut. Abgrenzbare Funktionen werden in Plugins gekapselt und durch einen Host als Dienste bereitgestellt. Die Interaktion zwischen Komponenten erfolgt über definierte Schnittstellen und gemeinsam verwendete Datentypen. Verträge und Implementierungen können dadurch getrennt entwickelt werden. Ein aufrufendes Modul ist nicht von einer konkreten Implementierung abhängig, solange der vereinbarte Vertrag eingehalten wird.
+
+Eine solche Plugin-Architektur erleichtert die Erweiterung des Gesamtsystems. Neue Funktionen können als zusätzliche Module eingebunden werden, ohne sämtliche bestehenden Komponenten anzupassen. Gleichzeitig entstehen klare Anforderungen an die Verantwortlichkeiten und Abhängigkeiten der einzelnen Plugins. Ein Plugin sollte einen fachlich zusammengehörenden Funktionsbereich abdecken und nur über stabile Grenzen mit seiner Umgebung kommunizieren.
+
+Für die vorliegende Arbeit bildet zenLAB den Laufzeit- und Integrationskontext. Das Device-Integration-Plugin soll innerhalb dieser modularen Architektur die zentrale Verwaltung und Vermittlung dynamisch verfügbarer Geräteintegrationen übernehmen. Es ergänzt damit die vorhandenen Bausteine, ersetzt jedoch weder die gerätespezifische Kommunikation noch die bereits verwendeten Clientzugriffe.
+
+\subsection{DeviceAgents und AgentManager}
+
+Ein DeviceAgent bildet die gerätenahe Integrationsschicht. Er kennt das Protokoll und die technischen Eigenschaften eines angebundenen Geräts und übersetzt zwischen dessen Schnittstelle und den von zenLAB erwarteten Funktionen. Zu seinen Aufgaben können der Aufbau einer Geräteverbindung, das Lesen und Schreiben von Werten, das Ausführen von Befehlen sowie die Verarbeitung spontan eintreffender Geräteereignisse gehören.
+
+Die gerätespezifische Logik verbleibt bewusst im jeweiligen DeviceAgent. Nur dort ist bekannt, wie ein konkretes Gerät adressiert wird, welche Datentypen es verwendet und wie Fehler des Geräteprotokolls zu interpretieren sind. Diese Abgrenzung ermöglicht es, Geräte unterschiedlicher Hersteller über eine gemeinsame übergeordnete Struktur anzusprechen, ohne ihre technischen Besonderheiten zu verlieren.
+
+DeviceAgents können in eigenen Prozessen ausgeführt werden. Die Prozessgrenze erhöht die Isolation, weil ein Fehler in einer gerätespezifischen Implementierung nicht unmittelbar im zenLAB-Host auftreten muss. Gleichzeitig können über diese Grenze keine direkten Objektreferenzen verwendet werden. Aufrufe, Parameter, Ergebnisse und Ereignisse müssen daher durch übertragbare Nachrichten beschrieben werden.
+
+Der AgentManager übernimmt die administrative Verwaltung der DeviceAgents. Dazu gehören insbesondere deren Konfiguration sowie das Starten, Überwachen und Beenden der zugehörigen Prozesse. Er kann erkennen, ob ein Prozess ausgeführt wird, und auf einen unerwarteten Prozessabbruch reagieren. Damit behandelt der AgentManager in erster Linie den Lebenszyklus ausführbarer Instanzen.
+
+Davon ist der Kommunikationslebenszyklus einer Integration zu unterscheiden. Ein gestarteter Prozess ist nicht automatisch beim späteren Device-Integration-Plugin registriert und für Clients erreichbar. Umgekehrt kann eine Kommunikationsverbindung unterbrochen sein, obwohl der Prozess weiterhin läuft. Der AgentManager beantwortet daher die Frage, ob ein DeviceAgent-Prozess ausgeführt wird. Das neue Plugin muss dagegen feststellen, welche Integrationen sich aktuell angemeldet haben, welche Geräte sie bereitstellen und ob ihre Kommunikationsverbindung noch gültig ist.
+
+Diese Trennung verhindert eine Vermischung unterschiedlicher Verantwortlichkeiten. Der AgentManager bleibt für Prozessstart, Prozessüberwachung und Konfiguration zuständig. Das Device-Integration-Plugin übernimmt die logische Verfügbarkeit und die Kommunikation der registrierten Integrationen. Beide Komponenten ergänzen einander, ohne denselben Lebenszyklus doppelt abzubilden.
+
+\subsection{TreeNode-Modell}
+
+Damit Clients Geräte unterschiedlicher Hersteller einheitlich verwenden können, bildet zenLAB deren Funktionen als Baumstruktur ab. Ein Gerät besitzt einen Wurzelknoten, unter dem weitere Knoten hierarchisch angeordnet sind. Jeder Knoten ist über einen Pfad innerhalb dieses Baums erreichbar. Auf diese Weise lassen sich Gerätefunktionen unabhängig von der zugrunde liegenden Hardware mit einer einheitlichen Adressierungsform beschreiben.
+
+Ein TreeNode kann unterschiedliche Rollen besitzen. Ein Knoten kann beispielsweise einen lesbaren oder veränderbaren Wert, eine aufrufbare Methode oder einen strukturellen Teil des Gerätemodells darstellen. Untergeordnete Knoten gliedern zusammengehörende Funktionen. Die Baumstruktur ermöglicht es einem Client, das Modell eines Geräts zu erkunden und anschließend gezielt auf einzelne Funktionen zuzugreifen.
+
+Im bestehenden System fasst die Schnittstelle \texttt{ITreeNodesBasedDeviceAgent} die zentralen TreeNode-Operationen zusammen. Dazu gehören das Ermitteln von Knoteninformationen, das Lesen und Setzen von Werten, das Aufrufen von Methoden sowie das Anlegen und Beenden von Abonnements. Der konkrete DeviceAgent übersetzt diese generischen Operationen in die Kommunikation mit dem jeweiligen Laborgerät.
+
+Neben einmaligen Aufrufen unterstützt das TreeNode-Modell Ereignisse. Ein Client kann sich beispielsweise für Änderungen eines Werts oder der Knotenstruktur interessieren. Der DeviceAgent meldet solche Änderungen, ohne dass der Client den Zustand fortlaufend abfragen muss. Diese ereignisbasierte Kommunikation ist für das Device-Integration-Plugin ebenso relevant wie normale Anfrage-Antwort-Aufrufe.
+
+Bestehende DeviceAgents sollen unverändert weiterverwendet werden. Dafür ist später eine technische Anpassungsschicht erforderlich. Sie bildet übertragene Aufträge auf die vorhandenen TreeNode-Operationen ab. Die fachliche Bedeutung der Gerätefunktionen und die eigentliche Hardwarekommunikation bleiben davon unberührt.
+
+\subsection{Bestehende Client- und WebAPI-Grenze}
+
+Clientanwendungen verwenden den TreeNodeBasedClient, um auf TreeNode-basierte Geräte zuzugreifen. Die Bibliothek kapselt die technischen Details der Kommunikation mit der TreeNodeBased.WebAPI und stellt typisierte Clientfunktionen bereit. Dadurch arbeiten die Anwendungen mit Geräte- und TreeNode-Operationen, ohne die zugrunde liegenden Webaufrufe selbst erzeugen zu müssen.
+
+Auftragsbezogene Operationen werden über HTTP an die WebAPI übertragen. Dazu zählen beispielsweise das Lesen eines Werts, das Setzen eines Werts oder das Ausführen einer Methode. Die WebAPI nimmt die Anfrage entgegen, löst die angegebenen Geräte- und Knotenpfade auf und delegiert die eigentliche Geräteoperation an die interne Diensteschicht.
+
+Für ereignisbasierte Informationen verwendet die bestehende Grenze ASP.NET Core SignalR. Über eine länger bestehende Verbindung können Wert- und Geräteänderungen an verbundene Clients weitergegeben werden. SignalR-Hubs ermöglichen dabei sowohl Aufrufe von Clients an den Server als auch Nachrichten des Servers an einzelne Clients, Gruppen oder alle verbundenen Clients \cite{microsoftSignalRHubs}.
+
+TreeNodeBasedClient und WebAPI bilden eine bereits verwendete Systemgrenze. Ihre grundsätzliche Funktionsweise soll durch die Arbeit nicht verändert werden. Das Device-Integration-Plugin wird hinter dieser Grenze eingeordnet. Die WebAPI bleibt damit für webbezogene Aufgaben zuständig, während das neue Plugin die dahinterliegende Verwaltung und Vermittlung der Integrationen und Geräte übernimmt.
+\section{Dynamische Geräteintegration}
+
+\subsection{Integrationen, Registrierungen und Geräte}
+
+Für die weitere Arbeit müssen die Begriffe Integration, Registrierung und Gerät voneinander unterschieden werden. Eine Integration bezeichnet eine eigenständig kommunizierende Softwarekomponente, die dem Plugin ein oder mehrere Geräte zur Verfügung stellt. Ein DeviceAgent kann eine solche Integration bilden oder an eine entsprechende Laufzeitkomponente angebunden werden. Ein Gerät bezeichnet dagegen die fachliche Einheit, deren TreeNode-Funktionen von Clients verwendet werden.
+
+Eine Integration besitzt eine logische Identität, über die sie systemweit unterschieden werden kann. Diese Identität soll auch dann stabil bleiben, wenn die Komponente neu gestartet wird. Eine konkrete Anmeldung am Plugin ist dagegen zeitlich begrenzt. Nach einem Neustart oder einer erneuten Verbindung entsteht eine neue Registrierung, obwohl die logische Integration dieselbe bleiben kann.
+
+Die Trennung zwischen stabiler Integrationsidentität und konkreter Registrierung ist für die Konsistenz des Systems wesentlich. Andernfalls könnte eine verspätete Nachricht aus einer alten Verbindung irrtümlich als Nachricht der neuen Verbindung behandelt werden. Gleiches gilt für bereits gestartete Timeouts oder Aufräumoperationen. Sie dürfen ausschließlich den Zustand derjenigen Registrierung verändern, zu der sie gehören.
+
+Auch Geräte benötigen eine eindeutige Identität. Ein Client soll ein Gerät unabhängig davon adressieren können, über welche technische Verbindung seine Integration gerade kommuniziert. Das Plugin muss deshalb eine Zuordnung zwischen Geräten, Integrationen und den jeweils aktuellen Registrierungen verwalten. Ändert sich die von einer Integration bereitgestellte Geräteliste, muss diese Zuordnung konsistent aktualisiert werden.
+
+\subsection{Registrierung und zentrale Geräteverwaltung}
+
+Dynamisch verfügbare Integrationen müssen dem Gesamtsystem mitteilen, dass sie erreichbar sind und welche Geräte sie bereitstellen. Dieser Vorgang wird als Registrierung bezeichnet. Dabei übermittelt eine Integration ihre Identität, beschreibende Metadaten und eine Liste der aktuell verfügbaren Geräte. Erst nach einer erfolgreichen Registrierung kann sie bei der Vermittlung von Clientzugriffen berücksichtigt werden.
+
+Eine zentrale Registry verwaltet den aktuellen Zustand der angemeldeten Integrationen. Sie beantwortet unter anderem, ob eine Integration aktiv ist, welche Registrierung zu ihr gehört und welche Geräte über sie erreichbar sind. Damit bildet sie die Grundlage für die Geräteauflösung und für spätere Routingentscheidungen. Auch andere Ansätze zur Laborautomation nutzen eine zentrale Verwaltung verfügbarer Geräte und Dienste, um deren Funktionen für automatisierte Abläufe auffindbar zu machen \cite{bromig2022sila}.
+
+Gerätelisten sind nicht notwendigerweise statisch. Eine Integration kann während ihrer Laufzeit weitere Geräte erkennen oder bisher verfügbare Geräte verlieren. Das Plugin benötigt deshalb ein definiertes Aktualisierungsmodell. Eine Möglichkeit ist die Übertragung vollständiger Bestandsaufnahmen. Der Empfänger kann einen solchen Snapshot atomar übernehmen und erkennt eindeutig, welche Geräte nach der Aktualisierung vorhanden sind. Bei rein inkrementellen Meldungen muss dagegen zusätzlich sichergestellt werden, dass keine Änderung verloren geht oder in falscher Reihenfolge verarbeitet wird.
+
+Die Registry ist eine gemeinsam verwendete Datenstruktur. Registrierungen, Geräteaktualisierungen, Clientzugriffe und Aufräumvorgänge können gleichzeitig auftreten. Zustandsänderungen müssen deshalb atomar oder durch geeignete Synchronisationsmechanismen geschützt werden. Ein Client darf beispielsweise kein Gerät erhalten, dessen Registrierung im selben Moment bereits entfernt wurde.
+
+Die zentrale Geräteverwaltung erfüllt damit mehr als eine reine Verzeichnisfunktion. Sie bildet die aktuelle Sicht auf die verfügbaren Integrationen und Geräte, stellt konsistente Zuordnungen für Clientzugriffe bereit und dient als Ausgangspunkt für Lebenszyklusüberwachung, Kommunikation und Subscriptions.
+
+\subsection{Lebenszyklus, Lease und Reconnect}
+
+Eine erfolgreiche Registrierung belegt nur, dass eine Integration zu einem bestimmten Zeitpunkt erreichbar war. Prozesse können abstürzen, Netzwerkverbindungen können abbrechen und ein ordnungsgemäßer Abmeldeaufruf kann ausbleiben. Das Plugin benötigt daher einen Mechanismus, um veraltete Registrierungen auch ohne aktive Abmeldung zu erkennen.
+
+Ein verbreiteter Ansatz ist ein zeitlich begrenztes Lease. Ein Lease gewährt einer Komponente einen Zustand oder ein Nutzungsrecht nur für einen festgelegten Zeitraum und muss regelmäßig erneuert werden. Das Konzept wurde als fehlertoleranter Mechanismus für verteilte Systeme beschrieben \cite{grayCheritonLeases}. Bleibt die Erneuerung aus, kann der Empfänger nach Ablauf des Zeitraums davon ausgehen, dass die zugehörige Registrierung nicht mehr gültig ist.
+
+Die Erneuerung kann durch eine eigene Statusmeldung oder durch eine regelmäßig übertragene vollständige Geräteliste erfolgen. Entscheidend ist, dass Intervall und Toleranz eindeutig festgelegt sind. Eine zu kurze Frist kann bereits bei vorübergehenden Verzögerungen zu einer fälschlichen Abmeldung führen. Eine zu lange Frist lässt nicht mehr erreichbare Geräte unnötig lange als verfügbar erscheinen.
+
+Beim Ablauf oder bei der aktiven Abmeldung einer Registrierung müssen sämtliche zugehörigen Zustände bereinigt werden. Dazu gehören die Gerätezuordnungen, offene Aufträge, Kommunikationskanäle und aktive Subscriptions. Der Vorgang sollte idempotent sein. Mehrere gleichzeitig ausgelöste Aufräumvorgänge müssen zum gleichen Endzustand führen und dürfen keine bereits neu angelegte Registrierung entfernen.
+
+Ein Reconnect erzeugt eine besondere Nebenläufigkeitssituation. Eine Integration kann sich mit ihrer stabilen Identität erneut anmelden, während Nachrichten oder Timeouts der alten Verbindung noch eintreffen. Deshalb müssen eingehende Nachrichten und Aufräumvorgänge zusätzlich der konkreten Registrierung zugeordnet werden. Nur Zustände der aktuell betroffenen Registrierung dürfen verändert werden.
+\section{Kommunikation verteilter Komponenten}
+
+\subsection{Auftrags- und Ergebnisprinzip}
+
+Bei einem lokalen Methodenaufruf befinden sich Aufrufer und ausführende Komponente üblicherweise im selben Prozess. Über eine Prozess- oder Netzwerkgrenze ist dies nicht möglich. Die gewünschte Operation muss in eine übertragbare Nachricht überführt und auf der Gegenseite wieder einer ausführbaren Funktion zugeordnet werden.
+
+Ein auftragsbasiertes Modell beschreibt eine solche Nachricht als Auftrag beziehungsweise Job. Der Auftrag enthält eine Kennung, die gewünschte Operation, die benötigten Parameter und gegebenenfalls Informationen über das Ziel. Parameter müssen in einem Format dargestellt werden, das vom verwendeten Transport übertragen und auf der Gegenseite rekonstruiert werden kann.
+
+Nach der Bearbeitung erzeugt die ausführende Komponente ein Ergebnis. Dieses verweist auf den ursprünglichen Auftrag und enthält entweder einen Rückgabewert oder eine definierte Fehlerdarstellung. Ausnahmen können nicht als lokale Laufzeitobjekte über eine Prozessgrenze weitergereicht werden. Relevante Fehlerinformationen müssen deshalb in einen transportierbaren Datentyp überführt werden.
+
+Das Auftrags- und Ergebnisprinzip entkoppelt die fachliche Operation vom Transport. Der Aufrufer muss nicht wissen, in welchem Prozess oder durch welche konkrete Klasse ein Auftrag ausgeführt wird. Beide Seiten benötigen lediglich gemeinsame Verträge für Operationen, Parameter, Ergebnisse und Fehler. Diese Verträge bilden eine stabile Grenze zwischen Client, Plugin und Integration.
+
+\subsection{Korrelation, Timeouts und Abbruch}
+
+Mehrere Clients können gleichzeitig Aufträge senden. Auch eine einzelne Integration kann mehrere Aufträge parallel bearbeiten. Ergebnisse treffen daher nicht zwingend in derselben Reihenfolge ein, in der die Aufträge versendet wurden. Für eine korrekte Zuordnung benötigt jeder Auftrag eine eindeutige Kennung.
+
+Eine Korrelationskomponente merkt sich, welche wartende Operation zu welcher Auftragskennung gehört. Sobald ein passendes Ergebnis eintrifft, wird genau diese Operation abgeschlossen. Ergebnisse mit unbekannter oder bereits abgeschlossener Kennung dürfen nicht beliebig einem anderen Auftrag zugeordnet werden. Sie werden verworfen und können für Diagnosezwecke protokolliert werden.
+
+Zusätzlich zur Auftragskennung ist in einem System mit mehreren Integrationen der Kontext des Ziels relevant. Dieselbe numerische Kennung könnte in unterschiedlichen Verbindungen vorkommen. Eine robuste Prüfung berücksichtigt daher auch die logische Integration und die konkrete Registrierung. Auf diese Weise lässt sich verhindern, dass ein verspätetes Ergebnis einer alten Verbindung einen neuen Auftrag abschließt.
+
+Ein Timeout begrenzt die Wartezeit auf ein Ergebnis. Bleibt eine Antwort aus, wird die wartende Operation mit einem definierten Fehler beendet und ihr Korrelationszustand entfernt. Abbruchsignale erlauben es außerdem, Aufträge zu beenden, wenn ein Client seine Anfrage zurückzieht, eine Verbindung getrennt wird oder das Gesamtsystem herunterfährt.
+
+Timeout und Abbruch beenden zunächst das lokale Warten. Die entfernte Verarbeitung kann zu diesem Zeitpunkt bereits begonnen haben. Die Contracts und die Fehlerbehandlung müssen deshalb berücksichtigen, dass ein Ergebnis noch verspätet eintreffen kann. Eine eindeutige Zustandsprüfung verhindert, dass ein solcher Eingang bereits abgeschlossene Abläufe nachträglich verändert.
+
+\subsection{Serviceadressierung und Routing}
+
+Routing bezeichnet die Auswahl des Empfängers, der einen Auftrag bearbeiten soll. In einem System mit nur einer festen Gegenstelle kann das Ziel implizit sein. Sobald mehrere Integrationen gleichzeitig aktiv sind, muss jeder Auftrag eine ausreichende Zielinformation enthalten oder über die angegebene Geräteidentität auf ein Ziel aufgelöst werden können.
+
+Die Registry liefert die Zuordnung zwischen einem Gerät und der aktuell zuständigen Registrierung. Eine Routingkomponente verwendet diese Zuordnung, um den Auftrag an den passenden Kommunikationskanal zu übergeben. Ist das Gerät unbekannt, die Integration nicht aktiv oder die Registrierung inzwischen ersetzt worden, muss der Zugriff mit einem nachvollziehbaren Fehler beendet werden.
+
+Beim Unicast-Routing wird ein Auftrag an genau ein Ziel übertragen. Dieses Verfahren eignet sich für gerätebezogene Operationen, weil ein konkretes Gerät zu einem bestimmten Zeitpunkt genau einer aktiven Integration zugeordnet sein sollte. Die Antwort kann unmittelbar mit dem versendeten Auftrag korreliert werden.
+
+Ein Broadcast richtet einen Auftrag dagegen an mehrere Integrationen. Dadurch entstehen zusätzliche Anforderungen. Für jedes Ziel muss ein eigener Teilauftrag beziehungsweise Korrelationszustand geführt werden. Die Teilergebnisse können zu unterschiedlichen Zeitpunkten eintreffen, einzelne Ziele können fehlschlagen und ein Gesamttimeout muss den Abschluss der Aggregation bestimmen. Zudem ist festzulegen, ob ein Teilausfall das gesamte Ergebnis ungültig macht oder als Teilresultat ausgewiesen wird.
+
+Routing ist damit eine notwendige Teilfunktion der Geräteintegration, jedoch nicht mit ihr gleichzusetzen. Erst durch die Verbindung mit Registry, Lebenszyklusverwaltung, Gerätezuordnung und Fehlerbehandlung kann zuverlässig entschieden werden, ob und wohin ein Auftrag übertragen werden darf.
+
+\subsection{Bidirektionale Kommunikation und Streams}
+
+Neben einzelnen Anfrage-Antwort-Aufrufen benötigt das Plugin länger bestehende Kommunikationswege. Eine registrierte Integration muss Aufträge empfangen und gleichzeitig Ergebnisse oder Ereignisse zurücksenden können. Eine bidirektionale Verbindung ermöglicht, dass beide Seiten unabhängig voneinander Nachrichten übertragen, ohne für jedes Element eine neue Verbindung aufzubauen.
+
+Asynchrone Streams modellieren eine Folge von Elementen, deren Umfang und Ankunftszeit beim Start noch nicht vollständig bekannt sind. In C~\# können solche Folgen mit \texttt{IAsyncEnumerable<T>} beschrieben und mit \texttt{await foreach} verarbeitet werden. Dabei wird jedes Element verarbeitet, sobald es verfügbar ist, ohne während der gesamten Wartezeit einen Thread zu blockieren \cite{microsoftAsyncStreams}.
+
+Für die interne Kommunikation verteilter .NET-Komponenten kann gRPC eingesetzt werden. Es unterstützt neben einzelnen Aufrufen auch Client-, Server- und bidirektionales Streaming. Beim code-first-Ansatz werden Service- und Nachrichtenverträge durch .NET-Schnittstellen und Datentypen beschrieben. Dadurch können Client und Server gemeinsame Verträge verwenden, ohne zusätzlich eine manuell gepflegte \texttt{.proto}-Datei als primäre Quelle zu benötigen \cite{microsoftGrpcCodeFirst}.
+
+Eine dauerhaft geöffnete Verbindung ist dennoch kein dauerhafter Verfügbarkeitsnachweis. Streamende, Transportfehler und Abbruchsignale müssen ausgewertet und mit dem Registrierungszustand verknüpft werden. Ebenso muss der Besitzer einer Verbindung eindeutig festgelegt sein, damit sie bei Abmeldung, Timeout oder Herunterfahren zuverlässig beendet und freigegeben wird.
+\section{Ereignisse und Subscriptions}
+
+\subsection{Abonnementmodell}
+
+Nicht jede Geräteinformation wird durch einen Client aktiv abgefragt. Werte oder Strukturen können sich unabhängig von einem Clientaufruf verändern. Polling würde erfordern, dass Clients dieselben Werte in kurzen Abständen wiederholt lesen. Dies erzeugt unnötige Aufrufe und erkennt Änderungen nur mit einer vom Abfrageintervall abhängigen Verzögerung.
+
+Ein Abonnement beschreibt das fortlaufende Interesse eines Clients an einer bestimmten Ereignisquelle. Im TreeNode-Kontext kann die Quelle durch das Gerät, einen Knotenpfad und die gewünschte Ereignisart bestimmt werden. Nach erfolgreicher Einrichtung werden passende Änderungen so lange übertragen, bis das Abonnement beendet wird oder eine beteiligte Verbindung ausfällt.
+
+Der Lebenszyklus eines Abonnements unterscheidet sich von einem einmaligen Auftrag. Zwischen Einrichtung und Beendigung können viele Ereignisse eintreffen. Das System muss erkennen, welchem Client sie zuzustellen sind, wann ein Abonnement nicht mehr gültig ist und welche Ressourcen nach seinem Ende freigegeben werden müssen.
+
+Subscriptions sind daher kein bloßer Sonderfall eines einzelnen Ergebnisses. Sie benötigen eigene Identitäten und Zustände sowie eine definierte Behandlung von Fehlern, Verbindungsabbrüchen und erneuter Registrierung. Ereignisse einer alten Registrierung dürfen ebenso wenig an Clients weitergegeben werden wie verspätete Antworten alter Aufträge.
+
+\subsection{Verteilung an mehrere Clients}
+
+Mehrere Clients können dieselbe Ereignisquelle abonnieren. Würde für jeden Client ein eigenständiges Abonnement bis zum DeviceAgent aufgebaut, könnten identische Geräteereignisse mehrfach erzeugt und übertragen werden. Eine gemeinsame vorgelagerte Subscription mit anschließender Verteilung reduziert diesen Aufwand.
+
+Hierfür verwaltet das Plugin einen logischen Schlüssel, der die abonnierte Quelle eindeutig beschreibt. Beim ersten interessierten Client wird das vorgelagerte Abonnement eingerichtet. Weitere Clients werden als zusätzliche Empfänger derselben Quelle registriert. Eingehende Ereignisse werden anschließend an alle aktuell zugeordneten Clients verteilt.
+
+Eine Referenzzählung kann bestimmen, wann das vorgelagerte Abonnement nicht mehr benötigt wird. Beendet ein Client sein Interesse, wird nur seine Zuordnung entfernt. Erst wenn kein Client mehr verbleibt, kann auch die Subscription gegenüber der Integration aufgelöst werden. Neben der Anzahl müssen die konkreten Clientzuordnungen gespeichert werden, damit ein Verbindungsabbruch gezielt bereinigt werden kann.
+
+Bei der Verteilung ist eine langsame Clientverbindung von anderen Empfängern zu isolieren. Andernfalls könnte ein einzelner Client die Verarbeitung aller weiteren Ereignisse verzögern. Geeignete Warteschlangen oder getrennte Verarbeitungspfade ermöglichen ein unabhängiges Fan-out. Dabei muss festgelegt werden, welche Reihenfolge pro Subscription garantiert wird.
+
+\subsection{Backpressure, Reihenfolge und Ressourcenfreigabe}
+
+Produziert eine Ereignisquelle dauerhaft mehr Elemente, als ein Empfänger verarbeiten kann, entsteht Backpressure. Ein unbegrenzter Puffer würde in diesem Fall kontinuierlich wachsen und langfristig den Speicherverbrauch des Systems erhöhen. Begrenzte Warteschlangen machen den maximalen Ressourcenbedarf kontrollierbar.
+
+Ist ein Puffer gefüllt, benötigt das System eine definierte Strategie. Es kann die produzierende Seite vorübergehend warten lassen, neue Ereignisse ablehnen oder überholte Zustandsmeldungen ersetzen. Welche Variante fachlich zulässig ist, hängt von der Ereignisart ab. Bei einer Folge einzelner Befehlsresultate darf in der Regel kein Element verloren gehen. Bei häufigen Meldungen desselben aktuellen Zustands kann dagegen unter Umständen nur der neueste Wert relevant sein.
+
+Auch die Reihenfolge der Ereignisse muss betrachtet werden. Für Änderungen derselben Quelle ist häufig eine geordnete Zustellung erforderlich. Zwischen voneinander unabhängigen Geräten oder Subscriptions kann eine parallele Verarbeitung dagegen sinnvoll sein. Die gewünschte Garantie muss vor der Wahl der Datenstrukturen und Verarbeitungsstrategie feststehen.
+
+Abbruch und Ressourcenfreigabe gehören zum Subscription-Lebenszyklus. Endet eine Clientverbindung, läuft eine Registrierung ab oder wird das Plugin beendet, müssen zugehörige Streams, Warteschlangen und Abonnements geschlossen werden. Abbruchsignale sollten durch alle beteiligten Verarbeitungsschichten weitergegeben werden. Eine idempotente Bereinigung verhindert Fehler, wenn mehrere Ursachen nahezu gleichzeitig dasselbe Abonnement beenden.
+\section{Architektur- und Technologiegrundlagen}
+
+\subsection{Plugin-Struktur und stabile Verträge}
+
+Eine Plugin-Architektur trennt einen stabilen Kern von ergänzbaren Funktionsbereichen. Die Interaktion erfolgt über definierte Erweiterungspunkte und Verträge. Solche Architekturen unterstützen eine unabhängige Entwicklung und Bereitstellung einzelner Komponenten, erfordern jedoch eine kontrollierte Verwaltung von Schnittstellen und Abhängigkeiten \cite{buschmannPOSA}.
+
+Verträge beschreiben, welche Operationen eine Komponente anbietet und welche Daten dabei ausgetauscht werden. Sie sollten nur Informationen enthalten, die für die Kommunikation tatsächlich erforderlich sind. Interne Implementierungsdetails gehören nicht in öffentliche Contracts, weil Änderungen daran sonst unnötig viele abhängige Projekte betreffen würden.
+
+Für ein Device-Integration-Plugin sind mehrere fachliche Bereiche zu unterscheiden: die Kommunikation mit Clients, die Kommunikation mit Integrationen, die Verwaltung von Registrierungen und Geräten sowie die Verteilung von Ereignissen. Ob diese Bereiche in getrennten Projekten umgesetzt werden, ist eine spätere Entwurfsentscheidung. Bereits auf Grundlagenebene ist jedoch wichtig, dass ihre Verantwortlichkeiten nicht in einer einzigen allzuständigen Komponente vermischt werden.
+
+Auch transportbezogene und fachliche Datentypen sollten bewusst getrennt werden. Allgemeine Auftrags-, Ergebnis- und Routinginformationen können unabhängig von einer konkreten TreeNode-Operation sein. TreeNode-spezifische Contracts beschreiben dagegen Gerätepfade, Werte, Methodenparameter und Ereignisse. Diese Trennung unterstützt Wiederverwendung und begrenzt Abhängigkeiten.
+
+\subsection{Adapter- und Proxy-Prinzip}
+
+Das Adapter-Entwurfsmuster überführt die Schnittstelle einer bestehenden Komponente in eine Schnittstelle, die von einem neuen Kontext erwartet wird. Dadurch kann vorhandene Funktionalität weiterverwendet werden, ohne die bestehende Implementierung vollständig anzupassen \cite{gammaDesignPatterns}. Für die Arbeit ist dieses Prinzip auf der Seite der DeviceAgents relevant.
+
+Ein Integrationsadapter kann transportierte TreeNode-Aufträge entgegennehmen und auf die vorhandene DeviceAgent-Schnittstelle abbilden. Nach der Ausführung übersetzt er Ergebnisse, Fehler und Ereignisse zurück in die gemeinsamen Kommunikationsverträge. Er besitzt dabei keine gerätespezifische Fachlogik. Diese verbleibt im angebundenen DeviceAgent.
+
+Das Proxy-Prinzip stellt einem Aufrufer ein lokales Objekt zur Verfügung, das dieselbe fachliche Schnittstelle wie ein entfernter Dienst anbietet. Der Proxy verbirgt Verbindungsaufbau, Serialisierung und Remote-Aufruf. Für den aufrufenden Teil des Systems bleibt dadurch die fachliche Dienstgrenze sichtbar, während Transportdetails gekapselt werden.
+
+In zenLAB wird dieses Prinzip in Form von SmartProxys verwendet. Für das Grundlagenverständnis ist entscheidend, dass Proxy und serverseitiger Dienst denselben Vertrag verwenden können. Welche konkreten Serviceverträge und Proxyklassen das Device-Integration-Plugin benötigt, wird erst im Architekturkonzept festgelegt.
+
+\subsection{gRPC und SignalR}
+
+gRPC und SignalR erfüllen im betrachteten System unterschiedliche Aufgaben. gRPC eignet sich für klar definierte Dienstgrenzen zwischen internen Komponenten. Es unterstützt typisierte Anfrage-Antwort-Aufrufe und verschiedene Streamingformen. Code-first gRPC ermöglicht es, Dienstverträge mit .NET-Schnittstellen und Datentypen auszudrücken \cite{microsoftGrpcCodeFirst}.
+
+SignalR stellt eine Hub-basierte Echtzeitkommunikation für verbundene Clients bereit. Der Server kann Nachrichten gezielt an einzelne Verbindungen oder Gruppen senden. Darüber hinaus unterstützt SignalR Streaming vom Client zum Server und vom Server zum Client. Elemente können übertragen werden, sobald sie verfügbar sind, anstatt zunächst eine vollständige Ergebnismenge zu sammeln \cite{microsoftSignalRHubs,microsoftSignalRStreaming}.
+
+An der bestehenden äußeren Systemgrenze verwendet die TreeNodeBased.WebAPI SignalR für Benachrichtigungen an Clientanwendungen. Für die interne Kommunikation zwischen Plugin und weiteren .NET-Komponenten kann gRPC verwendet werden. Die Technologien ersetzen einander daher nicht, sondern bedienen verschiedene Kommunikationsgrenzen.
+
+Unabhängig von der Transporttechnologie benötigt die Anwendung eigene Regeln für Identität, Lebenszyklus, Korrelation und Fehlerbehandlung. Ein Transport kann einen Verbindungsabbruch melden, entscheidet aber nicht selbst, welche Registrierung dadurch ungültig wird oder welche Geräte und Subscriptions zu entfernen sind. Diese Entscheidungen gehören zur Anwendungslogik des Plugins.
+
+\subsection{Dependency Injection und Testbarkeit}
+
+Dependency Injection bezeichnet die Bereitstellung von Abhängigkeiten von außen, anstatt sie innerhalb einer Klasse fest zu erzeugen. Dadurch hängt eine Komponente von einem Vertrag und nicht zwingend von einer konkreten Implementierung ab. In .NET sind Dependency Injection und ein zugehöriger Servicecontainer Bestandteil des Frameworks \cite{microsoftDependencyInjection}.
+
+Für das Device-Integration-Plugin betrifft dies beispielsweise Registry, Lebenszyklusüberwachung, Routing, Subscription-Verwaltung und Transportdienste. Werden diese Abhängigkeiten über Konstruktoren bereitgestellt, bleiben Verantwortlichkeiten sichtbar. Gleichzeitig können in automatisierten Tests kontrollierte Testimplementierungen eingesetzt werden.
+
+Testbarkeit ist bei nebenläufigen und zeitabhängigen Abläufen besonders wichtig. Eine abstrahierte Zeitquelle ermöglicht es beispielsweise, Lease-Abläufe und Timeouts deterministisch zu prüfen. Kontrollierbare Kommunikationskanäle erlauben Tests für verspätete Ergebnisse, Streamabbrüche und parallele Registrierungen, ohne von realen Netzwerklaufzeiten abhängig zu sein.
+
+Dependency Injection allein garantiert noch keine gute Struktur. Zu viele Abhängigkeiten können darauf hinweisen, dass eine Klasse mehrere Verantwortlichkeiten übernimmt. Kleine, klar benannte Komponenten und explizite Zuständigkeiten erleichtern sowohl die Implementierung als auch die spätere Evaluation der einzelnen Anforderungen.
+
+\section{Zusammenfassung}
+
+Das bestehende zenLAB-System stellt mit DeviceAgents, AgentManager, TreeNode-Modell sowie Client- und WebAPI-Grenze wesentliche Bausteine für die geräteunabhängige Kommunikation bereit. Für die dynamische Einbindung mehrerer Integrationen werden darüber hinaus eine zentrale Sicht auf Registrierungen und Geräte, eine eigenständige Lebenszyklusüberwachung und eine zuverlässige Vermittlung von Aufträgen und Ereignissen benötigt.
+
+Die beschriebenen Grundlagen zeigen, dass das Device-Integration-Plugin mehrere zusammenhängende Aufgaben vereint. Routing ist eine davon, steht jedoch in direkter Abhängigkeit zu Registrierung, Geräteverwaltung, Korrelation, Subscriptions und Ressourcenbereinigung. Auf dieser Grundlage werden im folgenden Kapitel die konkreten Anforderungen an das Plugin hergeleitet.
