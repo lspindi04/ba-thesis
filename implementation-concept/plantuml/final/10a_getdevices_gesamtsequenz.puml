@@ -1,0 +1,110 @@
+@startuml
+title GetDevices - vollständiger Ablauf von Integration bis Client
+
+autonumber
+hide footbox
+
+box "Integration SDK"
+participant DeviceIntegrationHostFactory as HostFactory
+participant DeviceIntegrationHost as Host
+participant IntegrationWorkerSupervisor as Supervisor
+participant DeviceIntegrationWorker as Worker
+participant "WorkerServiceProxy\n(Integration.Contracts)" as WorkerProxy
+participant IDeviceIntegration as Integration
+end box
+
+box "DeviceIntegrationPlugin"
+participant DeviceIntegrationWorkerService as WorkerService
+participant "StreamTrackingJobTransmitter\n<GetDevices>" as TrackingTx
+participant "JobTransmitter\n<GetDevices>" as InnerTx
+participant StreamTrackerCoordinator as Coordinator
+participant ServiceStreamTracker as Tracker
+participant ServiceDirectory as Directory
+participant IntegrationDeviceCatalogSynchronizer as Synchronizer
+participant JobFacade as Facade
+participant IntegrationDeviceCatalog as Catalog
+participant DeviceIntegrationService as ClientService
+end box
+
+box "Client.Contracts"
+participant DeviceIntegrationServiceProxy as ClientProxy
+end box
+
+actor Client
+
+group 1. SDK zusammensetzen und starten
+  HostFactory -> Host : Create(service, integration, ...)
+  Host -> Supervisor : RunService(service, token)
+  Supervisor -> Worker : für jeden verpflichtenden Endpoint starten
+end
+
+group 2. GetDevices-Stream öffnen und tracken
+  Worker -> WorkerProxy : ListenForGetDevicesRequests(service)
+  WorkerProxy -> WorkerService : gRPC-Stream öffnen
+  WorkerService -> TrackingTx : GetRequestStream(service, token)
+  TrackingTx -> InnerTx : GetRequestStream(service, token)
+  InnerTx --> TrackingTx : IAsyncEnumerable<JobRequest<EmptyDto>>
+  TrackingTx -> Coordinator : TrackStream(service, GetDevices, requestStream)
+  Coordinator -> Tracker : GetOrCreate(service) und TrackStream(...)
+  Tracker --> WorkerService : TrackedStream (über Coordinator/Decorator)
+  WorkerService --> WorkerProxy : gRPC-Nachrichtenstrom
+  WorkerProxy --> Worker : Stream
+  Worker -> Worker : Stream lesen
+  Tracker -> Tracker : GetDevices = Active
+end
+
+group 3. Service wird verfügbar und Initialsnapshot wird geladen
+  note over Tracker
+    In der aktuellen GetDevices-Ausbaustufe ist GetDevices
+    der verpflichtende Endpoint. Später müssen alle
+    definierten Methodenstreams Active sein.
+  end note
+  Tracker -> Coordinator : Availability = true
+  Coordinator -> Directory : RegisterService(service)
+  Coordinator -> Synchronizer : ServiceAvailable(service)
+  Synchronizer -> Facade : GetDevices für service
+  Facade -> TrackingTx : TransmitJobAndWaitForResult(...)
+  TrackingTx -> InnerTx : delegieren
+  InnerTx --> WorkerService : Request im geöffneten Stream
+  WorkerService --> WorkerProxy : gRPC-Nachricht
+  WorkerProxy --> Worker : JobRequest<EmptyDto>
+  Worker -> Integration : GetDevices(token)
+  Integration --> Worker : IntegrationDeviceDto[]
+  Worker -> WorkerProxy : SendGetDevicesResult(result)
+  WorkerProxy -> WorkerService : unary gRPC-Aufruf
+  WorkerService -> TrackingTx : NotifyJobResult(result)
+  TrackingTx -> InnerTx : delegieren
+  InnerTx --> Facade : korreliertes Ergebnis
+  Facade --> Synchronizer : devices
+  Synchronizer -> Catalog : PublishDeviceSnapshot(service, devices)
+end
+
+group 4. Client liest den veröffentlichten Katalog
+  Client -> ClientProxy : GetDevices()
+  ClientProxy -> ClientService : gRPC-Aufruf
+  ClientService -> Catalog : GetAvailableDevices()
+  Catalog --> ClientService : devices aller verfügbaren Services
+  ClientService --> ClientProxy : devices
+  ClientProxy --> Client : devices
+end
+
+group 5. Ein Pflichtstream endet
+  WorkerProxy --> Worker : Stream endet / Fehler
+  Tracker -> Tracker : Endpoint erhält terminalen Zustand
+  Tracker -> Tracker : Availability = false und alle Streams beenden
+  Tracker -> Coordinator : Availability = false
+  Coordinator -> Directory : UnregisterService(service)
+  Coordinator -> Synchronizer : ServiceUnavailable(service)
+  Synchronizer -> Catalog : RemoveServiceDevices(service)
+  Worker --> Supervisor : Worker-Task endet
+  Supervisor -> Supervisor : übrige Worker abbrechen
+  Supervisor --> Host : Service-Lauf beendet
+  Host -> Supervisor : nach Verzögerung neu starten
+end
+
+note over TrackingTx,Tracker
+  Das IAsyncEnumerable<T> ist der technische Stream und wird
+  direkt von TrackedStream<T> dekoriert. Eine zusätzliche
+  Stream<T>-Klasse wird nicht eingeführt.
+end note
+@enduml

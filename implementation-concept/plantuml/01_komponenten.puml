@@ -1,0 +1,55 @@
+@startuml
+!include theme.puml
+title Zielarchitektur mit Client-/Agent-Service, Node-Streams und einer Duplex-Verbindung
+top to bottom direction
+
+actor "Client-Anwendung" as App
+component "TreeNodeBasedClient\n(unverändert)" as Client #F2F2F2
+component "TreeNodeBased.WebAPI\n(unverändert)" as WebApi #F2F2F2
+component "DeviceIntegrationWebApiAdapter\nimplementiert bestehende WebAPI-Interfaces\n(Low Priority / Out of Scope)" as WebAdapter #FAE8E8
+component "DeviceIntegrationClientServiceProxy\nSmartProxy = gRPC-Client" as ClientProxy #FFF7E6
+
+node "zenLAB Host" {
+  package "DeviceIntegrationPlugin" {
+    component "DeviceIntegrationClientService" as ClientService
+    component "DeviceRegistry + Lifecycle +\nLeaseMonitor + SessionTerminator" as Registry
+    component "ServiceForwardRouter.Core\nJobFacade + MultiServiceJobTransmitter\n(aus AgentManager extrahiert)" as Router #E7F7F8
+    component "DeviceOperationTransmitterCatalog +\nIntegrationConnectionManager\neine Duplex-Verbindung je Registrierung" as Connection
+    component "Node-SubscriptionManager +\nClientEventHub" as Subs
+    component "DeviceIntegrationAgentService" as AgentService #EAF7EF
+    ClientService --> Registry : nur aktive Devices / Sessions
+    ClientService --> Router : TreeNode-Aufträge
+    ClientService --> Subs : Node-Streams / Registry-Events
+    AgentService --> Registry : Register / Vollsnapshot-Lease / Terminierung
+    AgentService --> Connection : Duplex-Stream + Aktivierungsbarriere
+    Connection --> Router : Jobs / Resultate / Router-Events
+    Connection --> Subs : Agent-Domänenevents
+  }
+}
+
+component "DeviceIntegrationAgentServiceProxy\nSmartProxy = gRPC-Client" as AgentProxy #FFF7E6
+node "DeviceAgent-Prozess" as AgentProcess {
+  component "DeviceIntegrationAgentRuntime +\nbegrenzter WorkScheduler" as Runtime #EAF7EF
+  component "bestehender DeviceAgent\nITreeNodesBasedDeviceAgent +\nIMultipleDevicesAgent" as Agent #EAF7EF
+  component "gemeinsame Basis-Erweiterung\nChildNodeAdded / ChildNodeRemoved" as Structure #FFF7E6
+  component "Gerätekommunikation" as Hardware
+  Runtime --> Agent : TreeNode-Aufrufe / Events / voller Snapshot
+  Runtime --> Structure : Strukturereignisse
+  Agent --> Hardware : gerätespezifisches Protokoll
+}
+component "AgentManagerPlugin\nZiel: Prozess-Lebenszyklus ohne Router;\nLegacy-Service-/Worker-/Proxy-Pfade routerfrei ersetzen" as AgentManager #F2F2F2
+
+App --> Client
+Client --> WebApi : bestehendes HTTP / SignalR
+WebApi --> WebAdapter : bestehende Management-Interfaces
+WebAdapter --> ClientProxy : unäre Aufrufe + Stream je Node
+ClientProxy --> ClientService : gRPC
+Runtime --> AgentProxy : alleiniger Besitzer / Dispose
+AgentProxy <--> AgentService : Register + NotifyDeviceList\n+ genau ein bidirektionaler gRPC-Stream
+note bottom of ClientProxy
+  Für Node- und Duplex-Streams konfigurieren beide Builder WithOneShotClient.
+  Dessen GetStream wird mit try/finally abgesichert und reconnectet nicht automatisch.
+  Client<T>.GetStream ist ungeeignet: Auto-Reconnect + unbounded Channel.
+end note
+AgentManager --> AgentProcess : startet / stoppt
+@enduml

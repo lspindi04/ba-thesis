@@ -1,0 +1,88 @@
+@startuml
+title Composition Roots und Container-Ownership
+
+left to right direction
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam linetype ortho
+
+package "Plugin-Prozess" {
+  component "Plugin.Initialize" as PluginInit
+  component "DeviceIntegrationDependencyInjector" as PluginDi
+  component "PluginCommonModule\nRouting" as RoutingModule
+  component "StreamTrackingModule" as TrackingModule
+  component "Plugin-Komponenten\nSingleInstance" as PluginComponents
+  component "DeviceIntegrationAgentService" as AgentService
+  component "DeviceIntegrationService" as ClientService
+  component "IConfigUtils\nextern injiziert" as Config
+
+  Config --> PluginInit
+  PluginInit --> PluginDi
+  PluginDi --> RoutingModule
+  PluginDi --> TrackingModule
+  PluginDi --> PluginComponents
+  PluginInit --> AgentService : Resolve + Start
+  PluginInit --> ClientService : Resolve + Start
+}
+
+package "Integrationsprozess" {
+  component "Integration Composition Root" as IntegrationRoot
+  component "IDeviceIntegration\nkonkrete Implementierung" as Integration
+  component "ServiceIdentification\nstabil" as Service
+  component "IClientBuilder\nkonfiguriert" as ClientBuilder
+  component "DeviceIntegrationSdkModule\nöffentliches Autofac-Modul" as SdkModule
+  component "Integrationscontainer" as IntegrationContainer
+  component "DeviceIntegrationHost" as Host
+  component "IntegrationWorkerSupervisor" as Supervisor
+
+  Integration --> IntegrationRoot : registrieren
+  Service --> IntegrationRoot : registrieren
+  ClientBuilder --> IntegrationRoot : registrieren
+  IntegrationRoot --> SdkModule : RegisterModule
+  IntegrationRoot --> IntegrationContainer : Build
+
+  SdkModule --> IntegrationContainer : registriert SDK-Komponenten
+  IntegrationContainer *-- Host : besitzt
+  IntegrationContainer *-- Supervisor : besitzt
+  IntegrationRoot --> Host : Resolve + Start/Stop
+  Host --> Supervisor
+}
+
+package "Client.Contracts" {
+  component DeviceIntegrationServiceProxy as ClientProxy
+  component IDeviceIntegrationService as ClientContract
+  ClientProxy --> ClientContract
+}
+
+package "Integration.Contracts" {
+  component DeviceIntegrationAgentServiceProxy as AgentProxy
+  component IDeviceIntegrationAgentService as AgentContract
+  AgentProxy --> AgentContract
+}
+
+package "Shared Contracts" {
+  component "Device DTOs\nServiceIdentification" as Shared
+}
+
+ClientProxy --> ClientService : gRPC
+IntegrationContainer *-- AgentProxy : besitzt
+AgentProxy --> AgentService : gRPC
+ClientContract ..> Shared
+AgentContract ..> Shared
+
+note bottom of PluginInit
+  Server-Composition: Routing, StreamTracking,
+  Device-Komponenten und beide gRPC-Endpunkte.
+end note
+
+note bottom of IntegrationRoot
+  Es gibt keinen SDK-eigenen Container, keine Runtime und keine HostFactory.
+  Der Integrationsprozess besitzt und beendet alle SDK-Komponenten.
+end note
+
+note bottom of Shared
+  Gemeinsame DTOs werden nicht zwischen den
+  beiden Contract-Projekten dupliziert.
+end note
+
+@enduml

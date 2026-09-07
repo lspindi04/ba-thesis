@@ -1,0 +1,92 @@
+@startuml
+title DeviceIntegrationPlugin - Services, Contracts und Transmitter-Decorator
+
+top to bottom direction
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Client.Contracts" {
+  interface IDeviceIntegrationService {
+    +GetDevices(request, context)
+  }
+  class DeviceIntegrationServiceProxy <<SmartProxy>>
+  DeviceIntegrationServiceProxy ..|> IDeviceIntegrationService
+}
+
+package "Integration.Contracts" {
+  interface IDeviceIntegrationWorkerService {
+    +ListenForGetDevicesRequests(service, context)
+    +SendGetDevicesResult(result, context)
+  }
+  class DeviceIntegrationWorkerServiceProxy <<SmartProxy>>
+  DeviceIntegrationWorkerServiceProxy ..|> IDeviceIntegrationWorkerService
+}
+
+package "DeviceIntegrationPlugin" {
+  class DeviceIntegrationService <<dünner gRPC-Service>>
+  class DeviceIntegrationWorkerService <<dünner gRPC-Service>>
+
+  class DeviceIntegrationJobTransmitters {
+    +GetDevices : IJobTransmitter<EmptyDto, IntegrationDeviceDto[]>
+  }
+
+  class "StreamTrackingJobTransmitter<TRequest,TResult>" as TrackingTransmitter <<Decorator>> {
+    -inner : IJobTransmitter<TRequest,TResult>
+    -endpoint : IntegrationStreamEndpoint
+    -coordinator : StreamTrackerCoordinator
+    +GetRequestStream(service, token)
+    +GetResultStream(service, token)
+    +TransmitJobAndWaitForResult(request, token)
+    +NotifyJobResult(result)
+  }
+
+  interface IIntegrationDeviceCatalog {
+    +GetAvailableDevices()
+    +PublishDeviceSnapshot(service, devices)
+    +RemoveServiceDevices(service)
+  }
+}
+
+package "Routing" {
+  interface "IJobTransmitter<TRequest,TResult>" as IJobTransmitter
+  class "JobTransmitter<TRequest,TResult>" as JobTransmitter
+}
+
+package "StreamTracking" {
+  class "TrackedStream<T>" as TrackedStreamT
+  class StreamTrackerCoordinator
+}
+
+DeviceIntegrationService ..|> IDeviceIntegrationService
+DeviceIntegrationWorkerService ..|> IDeviceIntegrationWorkerService
+TrackingTransmitter ..|> IJobTransmitter
+JobTransmitter ..|> IJobTransmitter
+
+DeviceIntegrationService --> IIntegrationDeviceCatalog
+DeviceIntegrationWorkerService --> DeviceIntegrationJobTransmitters
+DeviceIntegrationJobTransmitters --> TrackingTransmitter
+TrackingTransmitter o--> JobTransmitter : dekoriert
+TrackingTransmitter --> StreamTrackerCoordinator
+TrackingTransmitter ..> TrackedStreamT : dekoriert inneres\nIAsyncEnumerable
+StreamTrackerCoordinator --> TrackedStreamT : verwaltet
+
+note right of DeviceIntegrationWorkerService
+  Der Service kennt keine Tracker- oder Lease-Logik mehr.
+  Er gibt den vom Transmitter gelieferten Stream über gRPC aus.
+end note
+
+note right of TrackingTransmitter
+  Nur GetRequestStream wird um StreamTracking ergänzt.
+  Das zurückgegebene IAsyncEnumerable wird direkt durch
+  TrackedStream<T> dekoriert; es gibt keine Stream<T>-Zwischenklasse.
+  Alle übrigen IJobTransmitter-Methoden werden unverändert
+  an den inneren JobTransmitter delegiert.
+end note
+
+note bottom of DeviceIntegrationJobTransmitters
+  Fachlich benannter Katalog der dekorierten Transmitter.
+  Neue Device-Methode = neuer Endpoint und neuer Transmitter,
+  ohne Änderung des generischen Trackings.
+end note
+@enduml

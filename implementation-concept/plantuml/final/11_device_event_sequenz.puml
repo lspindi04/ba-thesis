@@ -1,0 +1,62 @@
+@startuml
+title Device-Event über Subscribe- und Unsubscribe-Streams
+
+autonumber
+hide footbox
+
+actor Client
+participant "DeviceIntegrationServiceProxy\n(Client.Contracts)" as ClientProxy
+participant DeviceIntegrationService as ClientService
+participant JobFacade as Facade
+participant "StreamTrackingJobTransmitter\n<Subscribe>" as SubscribeTx
+participant "JobTransmitter\n<Subscribe>" as SubscribeInner
+participant "StreamTrackingJobTransmitter\n<Unsubscribe>" as UnsubscribeTx
+participant DeviceIntegrationWorkerService as WorkerService
+participant "WorkerServiceProxy\n(Integration.Contracts)" as WorkerProxy
+participant "EventWorkRunner\n<IntegrationDeviceEventDto>" as EventRunner
+participant IDeviceIntegration as Integration
+
+note over SubscribeTx,EventRunner
+  Subscribe und Unsubscribe sind zwei verpflichtende, beim
+  Start geöffnete Streams. Technisch überträgt gRPC jeweils
+  ein IAsyncEnumerable<T>; das Naming bleibt trotzdem Stream.
+end note
+
+EventRunner -> Integration : DeviceEvent-Handler anmelden
+
+Client -> ClientProxy : SubscribeDeviceEvents(deviceId)
+ClientProxy -> ClientService : gRPC-Stream öffnen
+ClientService -> Facade : SubscribeEndpoint(subscribe, unsubscribe, service)
+Facade -> SubscribeTx : Subscribe-Job senden
+SubscribeTx -> SubscribeInner : delegieren
+SubscribeInner --> WorkerService : JobRequest<EmptyDto>
+WorkerService --> WorkerProxy : gRPC-Nachricht
+WorkerProxy --> EventRunner : Subscribe-Stream liefert Request
+EventRunner -> EventRunner : request.JobId registrieren
+
+loop solange das Client-Abonnement aktiv ist
+  Integration -> EventRunner : DeviceEvent(sender, event)
+  EventRunner -> WorkerProxy : SendDeviceEvent(JobResult mit service)
+  WorkerProxy -> WorkerService : unary gRPC-Aufruf
+  WorkerService -> SubscribeTx : NotifyEventResult(result)
+  SubscribeTx -> SubscribeInner : delegieren
+  SubscribeInner --> Facade : Event für Subscription
+  Facade --> ClientService : event
+  ClientService --> ClientProxy : gRPC-Nachricht
+  ClientProxy --> Client : event
+end
+
+Client -> ClientProxy : Stream beenden
+ClientProxy -> ClientService : Cancellation
+ClientService -> Facade : Enumerator wird beendet
+Facade -> UnsubscribeTx : Unsubscribe-Job senden
+UnsubscribeTx --> WorkerService : über inneren JobTransmitter
+WorkerService --> WorkerProxy : gRPC-Nachricht
+WorkerProxy --> EventRunner : Unsubscribe-Stream liefert Request
+EventRunner -> EventRunner : request.JobId entfernen
+
+note over Facade,EventRunner
+  Das generische EventWorkRunner-/JobFacade-Verhalten wird
+  wiederverwendet. Ein zusätzlicher EventHub ist nicht nötig.
+end note
+@enduml

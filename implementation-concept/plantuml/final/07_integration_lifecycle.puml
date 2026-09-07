@@ -1,0 +1,44 @@
+@startuml
+title Lifecycle eines Service anhand seiner Methodenstreams
+
+hide empty description
+
+[*] --> Disconnected
+
+Disconnected --> OpeningStreams : Host startet oder Reconnect
+OpeningStreams --> RoutingAvailable : alle erwarteten\nMethodenstreams Active
+OpeningStreams --> Closing : Stream endet vor Vollständigkeit
+
+RoutingAvailable --> SynchronizingDevices : ServiceAvailable-Ereignis\ndes StreamTrackings
+SynchronizingDevices --> Active : GetDevices erfolgreich\nPublishDeviceSnapshot
+SynchronizingDevices --> Closing : Initialsnapshot fehlgeschlagen
+
+Active --> Closing : ein Methodenstream\nCompleted / Canceled / Faulted
+Active --> Closing : Stop / Plugin-Shutdown
+
+Closing --> Disconnected : alle Streams terminieren,\nService entfernen, Devices entfernen
+Disconnected --> [*] : kein Reconnect gewünscht
+
+note right of OpeningStreams
+  Alle Methodenstreams sind Pflichtstreams.
+  Der ServiceStreamTracker kennt die explizite Menge
+  erwarteter IntegrationStreamEndpoints.
+end note
+
+note right of RoutingAvailable
+  Die Route wird vor dem initialen GetDevices-Auftrag
+  registriert. Dadurch ist gezieltes Routing möglich,
+  obwohl noch keine Devices veröffentlicht sind.
+end note
+
+note right of Active
+  ServiceDirectory = routbare Services.
+  IntegrationDeviceCatalog = veröffentlichte Devices.
+end note
+
+note right of Closing
+  Keine öffentliche ConnectionId: Die aktuell im
+  StreamTrackerCoordinator hinterlegte ServiceStreamTracker-
+  Instanz ist die interne Verbindungsgeneration.
+end note
+@enduml

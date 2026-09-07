@@ -1,0 +1,133 @@
+@startuml
+title Device Integration - Zielarchitektur mit generischem StreamTracking
+
+top to bottom direction
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 20
+skinparam ranksep 28
+hide empty members
+
+skinparam class {
+  BackgroundColor<<bestehend>> #E8EEF7
+  BorderColor<<bestehend>> #55739A
+  BackgroundColor<<Zielbild>> #E7F4E4
+  BorderColor<<Zielbild>> #4F7F45
+  BackgroundColor<<geplant>> #F3F3F3
+  BorderColor<<geplant>> #888888
+}
+
+package "Bestehende Clientseite" {
+  class TreeNodeBasedClient <<bestehend>>
+  class "TreeNodeBased.WebAPI" as WebApi <<bestehend>>
+  class AspNetCoreAdapter <<geplant>>
+  TreeNodeBasedClient --> WebApi
+  WebApi --> AspNetCoreAdapter
+}
+
+package "Client.Contracts" {
+  interface IDeviceIntegrationService <<Zielbild>>
+  class DeviceIntegrationServiceProxy <<Zielbild>>
+  DeviceIntegrationServiceProxy ..|> IDeviceIntegrationService
+}
+
+package "Integration.Contracts" {
+  interface IDeviceIntegrationWorkerService <<Zielbild>>
+  class DeviceIntegrationWorkerServiceProxy <<Zielbild>>
+  DeviceIntegrationWorkerServiceProxy ..|> IDeviceIntegrationWorkerService
+}
+
+package "Shared Contracts" {
+  class IntegrationDeviceDto <<bestehend>>
+  class IntegrationDeviceId <<bestehend>>
+  class ServiceIdentification <<bestehend>>
+}
+
+package "DeviceIntegrationPlugin" {
+  class Plugin <<bestehend>>
+  class DeviceIntegrationService <<Zielbild>>
+  class DeviceIntegrationWorkerService <<Zielbild>>
+  class DeviceIntegrationJobTransmitters <<Zielbild>>
+  class "StreamTrackingJobTransmitter<TRequest,TResult>" as TrackingTransmitter <<Zielbild>>
+  class IntegrationDeviceCatalogSynchronizer <<Zielbild>>
+  class IntegrationDeviceCatalog <<Zielbild>>
+
+  DeviceIntegrationService ..|> IDeviceIntegrationService
+  DeviceIntegrationWorkerService ..|> IDeviceIntegrationWorkerService
+  DeviceIntegrationWorkerService --> DeviceIntegrationJobTransmitters
+  DeviceIntegrationJobTransmitters --> TrackingTransmitter
+  DeviceIntegrationService --> IntegrationDeviceCatalog
+  IntegrationDeviceCatalogSynchronizer --> DeviceIntegrationJobTransmitters
+  IntegrationDeviceCatalogSynchronizer --> IntegrationDeviceCatalog
+}
+
+package "StreamTracking" {
+  class "TrackedStream<T>" as TrackedStreamT <<Zielbild>>
+  interface "IAsyncEnumerable<T>" as AsyncEnumerableT <<technische Basis>>
+  interface IServiceAvailabilityMonitor <<Zielbild>>
+  class ServiceStreamTracker <<Zielbild>>
+  class StreamTrackerCoordinator <<Zielbild>>
+
+  TrackedStreamT ..|> AsyncEnumerableT
+  ServiceStreamTracker o-- TrackedStreamT
+  StreamTrackerCoordinator o-- ServiceStreamTracker
+  StreamTrackerCoordinator ..|> IServiceAvailabilityMonitor
+
+  note right of TrackedStreamT
+    TrackedStream<T> dekoriert direkt ein IAsyncEnumerable<T>.
+    IAsyncEnumerable ist dabei der technische Stream;
+    eine zusätzliche Stream<T>-Klasse ist nicht vorgesehen.
+  end note
+}
+
+package "Generisches Routing" {
+  interface IJobFacade <<bestehend>>
+  interface IJobTransmitter <<bestehend>>
+  interface IServiceRouteRegistry <<bestehend>>
+  class JobTransmitter <<bestehend>>
+  class ServiceDirectory <<bestehend>>
+
+  JobTransmitter ..|> IJobTransmitter
+  ServiceDirectory ..|> IServiceRouteRegistry
+}
+
+package "Integration SDK" {
+  interface IDeviceIntegration <<bestehend>>
+  class DeviceIntegrationHostFactory <<bestehend>>
+  class DeviceIntegrationRuntime <<bestehend>>
+  class DeviceIntegrationHost <<Zielbild>>
+  class IntegrationWorkerSupervisor <<Zielbild>>
+  class DeviceIntegrationWorker <<Zielbild>>
+
+  DeviceIntegrationHostFactory --> DeviceIntegrationRuntime : erzeugt
+  DeviceIntegrationHostFactory --> DeviceIntegrationHost : erzeugt
+  DeviceIntegrationHost *-- DeviceIntegrationRuntime
+  DeviceIntegrationRuntime --> IntegrationWorkerSupervisor
+  IntegrationWorkerSupervisor --> DeviceIntegrationWorker
+  DeviceIntegrationWorker --> IDeviceIntegration
+  DeviceIntegrationWorker --> DeviceIntegrationWorkerServiceProxy
+}
+
+package "Konkrete Integration" {
+  class SingleDeviceIntegration <<bestehend>>
+  SingleDeviceIntegration ..|> IDeviceIntegration
+}
+
+AspNetCoreAdapter --> DeviceIntegrationServiceProxy
+DeviceIntegrationServiceProxy --> DeviceIntegrationService : gRPC
+DeviceIntegrationWorkerServiceProxy --> DeviceIntegrationWorkerService : gRPC-Methodenstreams
+
+TrackingTransmitter o--> JobTransmitter : dekoriert
+TrackingTransmitter --> StreamTrackerCoordinator
+StreamTrackerCoordinator --> IServiceRouteRegistry
+IntegrationDeviceCatalogSynchronizer --> IServiceAvailabilityMonitor : beobachtet Verfügbarkeit
+IntegrationDeviceCatalogSynchronizer --> IJobFacade : initialer GetDevices-Job
+
+legend bottom
+  |= Farbe |= Bedeutung |
+  |<#E8EEF7> blau | vorhandene, weiterverwendete Grundlage |
+  |<#E7F4E4> grün | neues Zielbild aus dem Betreuerfeedback |
+  |<#F3F3F3> grau | spätere fachliche Erweiterung |
+endlegend
+@enduml

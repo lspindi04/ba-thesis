@@ -1,0 +1,80 @@
+@startuml
+title Generisches Routing - vom StreamTracking unverändert verwendet
+
+top to bottom direction
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Routing.Contracts" {
+  interface IJobFacade {
+    +QueueJobAndWaitForResult(transmitter, request, target, token)
+    +QueueJobAndWaitForResults(transmitter, request, concatResults, token)
+    +SubscribeEndpoint(subscribe, unsubscribe, target, token)
+  }
+
+  interface "IJobTransmitter<TRequest,TResult>" as IJobTransmitter {
+    +GetRequestStream(service, token) : IAsyncEnumerable<JobRequest<TRequest>>
+    +GetResultStream(service, token)
+    +TransmitJobAndWaitForResult(request, token)
+    +NotifyJobResult(result)
+    +NotifyEventResult(result)
+  }
+
+  interface IServiceDirectory {
+    +GetConnectedServices()
+    +IsConnected(service)
+  }
+
+  interface IServiceRouteRegistry {
+    +RegisterService(service)
+    +UnregisterService(service)
+  }
+
+}
+
+package "Routing" {
+  class JobFacade
+  class "JobTransmitter<TRequest,TResult>" as JobTransmitter
+  class ServiceDirectory {
+    -services : ConcurrentDictionary<ServiceIdentification, byte>
+  }
+  class ServiceRequestRoute
+  class ServiceResultRoute
+  class BufferedMessageStream
+}
+
+IServiceRouteRegistry --|> IServiceDirectory
+JobFacade ..|> IJobFacade
+JobTransmitter ..|> IJobTransmitter
+ServiceDirectory ..|> IServiceRouteRegistry
+
+JobFacade --> IServiceDirectory
+JobFacade --> IJobTransmitter
+JobTransmitter *-- ServiceRequestRoute
+JobTransmitter *-- ServiceResultRoute
+JobTransmitter --> BufferedMessageStream
+
+note right of JobTransmitter
+  Bleibt unverändert und kennt weder Devices
+  noch Stream-Lifecycle. Tracking wird durch
+  einen Decorator außerhalb des Routers ergänzt.
+end note
+
+note right of ServiceDirectory
+  Bleibt unverändert. Der StreamTrackerCoordinator verwendet
+  lediglich das bereits vorhandene IServiceRouteRegistry zum
+  Registrieren und Entfernen routbarer Services.
+end note
+
+note bottom of BufferedMessageStream
+  Interne technische Brücke von IObservable<T>
+  zu IAsyncEnumerable<T>. Dieses IAsyncEnumerable wird
+  im Konzept und im Naming als Stream bezeichnet; eine
+  zusätzliche Stream-Klasse wird nicht eingeführt.
+end note
+
+note bottom of JobFacade
+  StreamTracking verändert weder JobFacade noch deren Broadcast-,
+  Targeting-, Result- oder Event-Logik.
+end note
+@enduml

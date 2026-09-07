@@ -1,0 +1,101 @@
+@startuml
+title Generisches StreamTracking - bereinigtes Klassendiagramm
+
+top to bottom direction
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "StreamTracking.Contracts" {
+  interface ITrackedStream {
+    +Endpoint : IntegrationStreamEndpoint
+    +State : IObservable<StreamState>
+    +Terminate()
+  }
+
+  interface IServiceAvailabilityMonitor {
+    +ServiceAvailable : IObservable<ServiceIdentification>
+    +ServiceUnavailable : IObservable<ServiceIdentification>
+  }
+
+  enum StreamState {
+    Active
+    Completed
+    Canceled
+    Faulted
+  }
+
+}
+
+package ".NET" {
+  interface "IAsyncEnumerable<T>" as AsyncEnumerableT {
+    +GetAsyncEnumerator(ct)
+  }
+}
+
+package "StreamTracking" {
+  class "TrackedStream<T>" as TrackedStreamT {
+    -inner : IAsyncEnumerable<T>
+    -termination : CancellationTokenSource
+    +Endpoint : IntegrationStreamEndpoint
+    +State : IObservable<StreamState>
+    +GetAsyncEnumerator(ct)
+    +Terminate()
+  }
+
+  class ServiceStreamTracker {
+    +Service : ServiceIdentification
+    +Availability : IObservable<bool>
+    -expectedEndpoints : Set<IntegrationStreamEndpoint>
+    -trackedStreams : Dictionary<IntegrationStreamEndpoint, ITrackedStream>
+    +TrackStream<T>(endpoint, stream : IAsyncEnumerable<T>) : TrackedStream<T>
+    +Terminate()
+    -HandleStreamState(endpoint, state)
+  }
+
+  class StreamTrackerCoordinator {
+    -serviceTrackers : Dictionary<ServiceIdentification, ServiceStreamTracker>
+    +ServiceAvailable : IObservable<ServiceIdentification>
+    +ServiceUnavailable : IObservable<ServiceIdentification>
+    +TrackStream<T>(service, endpoint, stream : IAsyncEnumerable<T>) : TrackedStream<T>
+    +RemoveService(service)
+    -HandleAvailability(tracker, available)
+  }
+}
+
+package "Routing.Contracts" {
+  interface IServiceRouteRegistry {
+    +RegisterService(service)
+    +UnregisterService(service)
+  }
+}
+
+TrackedStreamT ..|> ITrackedStream
+TrackedStreamT ..|> AsyncEnumerableT
+StreamTrackerCoordinator ..|> IServiceAvailabilityMonitor
+ServiceStreamTracker o-- ITrackedStream
+ServiceStreamTracker --> IntegrationStreamEndpoint
+StreamTrackerCoordinator o-- ServiceStreamTracker
+StreamTrackerCoordinator --> IServiceRouteRegistry
+
+note bottom of TrackedStreamT
+  Dekoriert direkt den vorhandenen IAsyncEnumerable<T>-Stream.
+  Es gibt keine zusätzliche Stream<T>-Klasse. Beginnt das Lesen,
+  wird Active gemeldet; Abschluss, Abbruch oder Fehler erzeugen
+  genau einen terminalen Zustand. Terminate beendet den Stream.
+end note
+
+note bottom of ServiceStreamTracker
+  Alle erwarteten Methodenstreams sind verpflichtend.
+  Erst wenn jede eindeutige Endpoint-Kennung Active ist,
+  wird der Service verfügbar. Endet einer, werden alle beendet.
+end note
+
+note bottom of StreamTrackerCoordinator
+  Pro Service existiert höchstens ein aktueller Tracker.
+  Ereignisse einer ersetzten Tracker-Instanz werden ignoriert.
+  Über das bestehende IServiceRouteRegistry wird die Route gepflegt;
+  Verfügbarkeitsereignisse veröffentlicht das Tracking selbst.
+  Der generische Router muss dafür nicht geändert werden.
+end note
+@enduml

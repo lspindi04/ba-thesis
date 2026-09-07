@@ -1,0 +1,72 @@
+@startuml
+title Routing Execution und Event-Streams
+
+left to right direction
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Routing.Execution" {
+  interface "IEventWorkRunner<TEvent>" as IEventWorkRunner {
+    +ExecuteEventWork(token)
+  }
+
+  class EventWorkRunnerFactory {
+    +Create(service, subscribeStream, unsubscribeStream,
+    subscribe, unsubscribe, send, name)
+  }
+
+  class "EventWorkRunner<TEvent>" as EventWorkRunner {
+    -service : ServiceIdentification
+    -subscriptions : HashSet<ulong>
+    -subscribeStream : IAsyncEnumerable<JobRequest<EmptyDto>>
+    -unsubscribeStream : IAsyncEnumerable<JobRequest<EmptyDto>>
+    +ExecuteEventWork(token)
+  }
+}
+
+package "Routing" {
+  interface "IJobTransmitter<TRequest,TResult>" as IJobTransmitter
+  class "JobTransmitter<TRequest,TResult>" as JobTransmitter
+}
+
+package "DeviceIntegrationPlugin" {
+  class "StreamTrackingJobTransmitter<TRequest,TResult>" as TrackingTransmitter
+  class DeviceIntegrationService <<geplant>>
+}
+
+package "StreamTracking" {
+  class StreamTrackerCoordinator
+  class "TrackedStream<JobRequest<T>>" as TrackedRequestStream
+}
+
+interface "IAsyncEnumerable<JobRequest<T>>" as RequestStream <<technische Signatur>>
+
+EventWorkRunner ..|> IEventWorkRunner
+EventWorkRunnerFactory --> EventWorkRunner
+TrackingTransmitter ..|> IJobTransmitter
+TrackingTransmitter o--> JobTransmitter : dekoriert
+TrackingTransmitter --> TrackedRequestStream : erzeugt Decorator
+TrackedRequestStream ..|> RequestStream
+TrackingTransmitter --> StreamTrackerCoordinator : trackt Methodenstream
+DeviceIntegrationService --> IJobTransmitter : Subscribe / Unsubscribe
+EventWorkRunner --> RequestStream : liest zwei Streams
+
+note bottom of EventWorkRunner
+  Läuft im Integration SDK. Sie liest je einen fachlichen
+  Stream für Subscribe und Unsubscribe, verwaltet deren JobIds
+  und leitet Events der konkreten Integration als JobResult weiter.
+end note
+
+note bottom of TrackingTransmitter
+  Event-Methodenstreams werden genauso wie alle anderen
+  verpflichtenden Methodenstreams verfolgt. Das Tracking
+  bleibt vom Ausführen der Event-Abonnements getrennt.
+end note
+
+note right of RequestStream
+  Das IAsyncEnumerable<T> wird fachlich als Stream bezeichnet.
+  Der SmartProxy überträgt diesen Stream über gRPC; dafür ist
+  keine zusätzliche Stream<T>-Klasse notwendig.
+end note
+@enduml

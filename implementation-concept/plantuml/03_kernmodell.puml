@@ -1,0 +1,133 @@
+@startuml
+!include theme.puml
+title Kernmodell: Contracts, Plugin-Core, Router-Core und AgentSdk
+top to bottom direction
+skinparam nodesep 18
+skinparam ranksep 28
+hide empty members
+
+abstract class "SmartProxy<TService>" as SmartProxy
+interface IServiceHostService
+interface "IClient<TService>" as IClient_T
+class "OneShotClient<TService>" as OneShotClient_T <<GetStream anpassen>>
+
+package "DeviceIntegration.Contracts" as ContractsCore {
+  interface IDeviceIntegrationClientService
+  interface IDeviceIntegrationAgentService
+  class DeviceIntegrationClientServiceProxy <<gRPC client>>
+  class DeviceIntegrationAgentServiceProxy <<gRPC client>>
+}
+
+package "DeviceIntegration.Plugin.Core" as PluginCore {
+  class DeviceIntegrationClientService <<gRPC service>>
+  class DeviceIntegrationAgentService <<gRPC service>>
+  class DeviceRegistry
+  class IntegrationLifecycleCoordinator
+  class IntegrationSessionTerminator
+  class SubscriptionManager
+  class ClientEventHub
+  class IntegrationConnectionManager
+  class DeviceOperationTransmitterCatalog
+  class DeviceOperationDispatcher
+
+  DeviceIntegrationClientService --> DeviceRegistry : aktive Devices
+  DeviceIntegrationClientService --> DeviceOperationDispatcher : TreeNode-Aufträge
+  DeviceIntegrationClientService --> SubscriptionManager : Stream je Node
+  DeviceIntegrationClientService --> ClientEventHub : Device-/Integrationsevents
+  DeviceIntegrationAgentService --> IntegrationLifecycleCoordinator : Register / Snapshot
+  DeviceIntegrationAgentService --> IntegrationConnectionManager : ein Duplex-Stream
+  DeviceIntegrationAgentService --> IntegrationSessionTerminator : gemeinsamer Cleanup
+  IntegrationConnectionManager --> DeviceOperationTransmitterCatalog : Pumps vor Active
+  DeviceOperationDispatcher --> DeviceOperationTransmitterCatalog
+  SubscriptionManager --> DeviceOperationDispatcher : erster / letzter Client
+}
+
+package "ServiceForwardRouter.Core.Contracts" as RouterContracts {
+  class ServiceIdentification
+  class ServiceSessionKey <<readonly value>>
+  class "JobRequest<T>" as SharedJobRequest
+  class "JobResult<T>" as SharedJobResult
+}
+
+package "ServiceForwardRouter.Core\n(aus AgentManager extrahieren)" as RouterCore {
+  class JobFacade
+  class "MultiServiceJobTransmitter<TRequest,TResult>" as MultiTransmitter
+  class "BufferedMessageStream<T>" as BufferedStream
+  class "RouterEventHub<T>" as RouterEventHub
+  JobFacade --> MultiTransmitter : Target / Broadcast / Events
+  MultiTransmitter *-- BufferedStream : bounded + async Wait
+  MultiTransmitter *-- RouterEventHub : eigener Buffer je Subscriber
+  RouterCore --> RouterContracts
+}
+
+package "DeviceIntegration.AgentSdk / DeviceAgent-Prozess" as AgentSdk {
+  class DeviceIntegrationAgentRuntime
+  class AgentSessionRuntime <<eine Instanz je RegistrationId>>
+  class IntegrationWorkScheduler
+  class AgentMessageOutbox
+  class AgentDeviceAssignmentMap <<AgentDeviceKey <-> DeviceId>>
+  class DeviceAgentEventForwarder
+  interface ITreeNodesBasedDeviceAgent <<bestehend>>
+  interface IMultipleDevicesAgent <<bestehend>>
+  interface ITreeNodeStructureEvents <<Basis erweitern>>
+  class DeviceAgentCompositionRoot <<anpassen>>
+
+  DeviceAgentCompositionRoot *-- DeviceIntegrationAgentRuntime
+  DeviceAgentCompositionRoot *-- ITreeNodesBasedDeviceAgent
+  DeviceIntegrationAgentRuntime *-- AgentSessionRuntime : bei Re-Register frisch erzeugen
+  AgentSessionRuntime --> IntegrationWorkScheduler : begrenzte Arbeit
+  AgentSessionRuntime *-- AgentMessageOutbox : frische lossless Frames
+  AgentSessionRuntime *-- AgentDeviceAssignmentMap : kanonische IDs je Snapshot-Antwort
+  AgentSessionRuntime --> DeviceAgentEventForwarder
+  IntegrationWorkScheduler --> ITreeNodesBasedDeviceAgent
+  DeviceAgentEventForwarder --> ITreeNodesBasedDeviceAgent
+  DeviceAgentEventForwarder --> IMultipleDevicesAgent : Vollsnapshot
+  DeviceAgentEventForwarder --> ITreeNodeStructureEvents : ChildAdded / Removed
+}
+
+class "TreeNodeBased.WebAPI" as WebApi <<unverändert / out of scope>>
+interface ITreeNodeBasedDeviceManagement <<unverändert / out of scope>>
+class DeviceIntegrationWebApiAdapter <<Low Priority / out of scope>>
+class AgentManagerPlugin <<Pflichtmigration: routerfreie Control-Plane>>
+
+IDeviceIntegrationClientService --|> IServiceHostService
+IDeviceIntegrationAgentService --|> IServiceHostService
+DeviceIntegrationClientServiceProxy --|> SmartProxy : <ClientService>
+DeviceIntegrationAgentServiceProxy --|> SmartProxy : <AgentService>
+OneShotClient_T ..|> IClient_T
+DeviceIntegrationClientServiceProxy ..> OneShotClient_T : Node-Streams ohne Auto-Reconnect
+DeviceIntegrationAgentServiceProxy ..> OneShotClient_T : Duplex ohne Auto-Reconnect
+DeviceIntegrationClientServiceProxy ..|> IDeviceIntegrationClientService
+DeviceIntegrationAgentServiceProxy ..|> IDeviceIntegrationAgentService
+DeviceIntegrationClientService ..|> IDeviceIntegrationClientService
+DeviceIntegrationAgentService ..|> IDeviceIntegrationAgentService
+WebApi --> ITreeNodeBasedDeviceManagement : bestehender Vertrag
+DeviceIntegrationWebApiAdapter ..|> ITreeNodeBasedDeviceManagement
+DeviceIntegrationWebApiAdapter --> DeviceIntegrationClientServiceProxy
+DeviceIntegrationAgentRuntime *-- DeviceIntegrationAgentServiceProxy : alleiniger Besitzer
+DeviceIntegrationAgentRuntime --> RouterContracts
+DeviceIntegrationAgentServiceProxy <--> DeviceIntegrationAgentService : genau ein Duplex-Stream
+DeviceOperationTransmitterCatalog *-- MultiTransmitter : neun Operationen
+AgentManagerPlugin --> DeviceAgentCompositionRoot : starten / stoppen
+
+
+note right of OneShotClient_T
+  Client<T>.GetStream besitzt Auto-Reconnect und unbounded Channel.
+  Builder wählen WithOneShotClient; dessen GetStream wird mit try/finally
+  abgesichert, damit Streamende unverfälscht sichtbar bleibt.
+end note
+note right of IDeviceIntegrationClientService
+  WatchNodeEvents: eigener Stream je Node.
+  WatchRegistryEvents: nur Device/Integration.
+  Streamabbruch entfernt exakt einen Client.
+end note
+note right of IntegrationLifecycleCoordinator
+  NotifyDeviceList = Vollsnapshot + Lease.
+  Active erst nach Ready aller Request-Pumps und
+  Commit des garantiert ersten ConnectionAccepted-Frames.
+end note
+note right of JobFacade
+  Neu: ServiceSessionKey, Target, Broadcast,
+  Aggregation, Eventstreams und Backpressure.
+end note
+@enduml

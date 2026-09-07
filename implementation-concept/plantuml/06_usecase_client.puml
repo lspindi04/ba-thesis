@@ -1,0 +1,44 @@
+@startuml
+!include theme.puml
+title Clientzugriff auf Devices und Node-Streams
+left to right direction
+actor "Client-Anwendung\nüber TreeNodeBasedClient" as Client
+actor "DeviceIntegrationAgentRuntime" as Integration
+rectangle "DeviceIntegrationPlugin" {
+  usecase "aktive Integrationen\nabfragen" as Services
+  usecase "aktive Devices\nabfragen" as Devices
+  usecase "Knoteninformationen\nlesen" as Info
+  usecase "Knotenwert\nlesen" as Read
+  usecase "Knotenwert\nschreiben" as Write
+  usecase "Knotenmethode\naufrufen" as Call
+  usecase "Node-Ereignisse in einem\neigenen Stream abonnieren" as Subscribe
+  usecase "eine Client-Subscription\nbeenden" as Unsubscribe
+  usecase "alle Subscriptions einer\nClient-Session beenden" as UnsubscribeAll
+  usecase "Integration-/Device-Events\nseparat empfangen" as RegistryEvents
+  usecase "Device auf aktive\nServiceSession auflösen" as Resolve
+  usecase "TreeNode-Auftrag\nzielgerichtet routen" as Route
+  usecase "Upstream-Subscription bis\nzum letzten Client teilen" as Share
+  usecase "bei Streamabbruch genau die\nClient-Referenz entfernen" as Cancel
+}
+Client --> Services
+Client --> Devices
+Client --> Info
+Client --> Read
+Client --> Write
+Client --> Call
+Client --> Subscribe
+Client --> Unsubscribe
+Client --> UnsubscribeAll
+Client --> RegistryEvents
+Info .> Route : <<include>>
+Read .> Route : <<include>>
+Write .> Route : <<include>>
+Call .> Route : <<include>>
+Subscribe .> Route : <<include>>
+Subscribe .> Share : <<include>>
+Cancel .> Subscribe : <<extend>>
+Unsubscribe .> Share : <<include>>
+UnsubscribeAll .> Share : <<include>>
+Route .> Resolve : <<include>>
+Route --> Integration
+@enduml

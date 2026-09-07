@@ -1,0 +1,46 @@
+@startuml
+!include theme.puml
+title Lebenszyklus einer Integration
+left to right direction
+actor "DeviceIntegrationAgentRuntime\nim DeviceAgent-Prozess" as Integration
+actor "Zeitgeber" as Timer
+actor "bestehender\nDeviceAgent" as Agent
+rectangle "DeviceIntegrationPlugin" {
+  usecase "Service-ID eindeutig\nreservieren" as Register
+  usecase "Metadaten und vollständige\nDevice-Liste validieren" as Validate
+  usecase "eine bidirektionale\nDuplex-Verbindung öffnen" as Stream
+  usecase "alle Transmitter/Pumps\natomar vorbereiten" as Prepare
+  usecase "Integration erst danach\nActive schalten" as Activate
+  usecase "vollständige Device-Liste\nperiodisch oder sofort melden" as Devices
+  usecase "Snapshot-Diff bilden und\nLease atomar erneuern" as Renew
+  usecase "Integration\naktiv abmelden" as Unregister
+  usecase "Timeout oder Streamende\nerkennen" as Timeout
+  usecase "Session idempotent\nterminieren" as Cleanup
+  usecase "nach Verbindungsverlust\nneu registrieren" as ReRegister
+  usecase "TreeNode-Auftrag in einen\nbegrenzten Scheduler einreihen" as Receive
+  usecase "Ergebnis oder Event über\ndenselben Stream zurücksenden" as Result
+}
+Integration --> Register
+Integration --> Stream
+Integration --> Devices
+Integration --> Unregister
+Integration --> Receive
+Integration --> Result
+Agent --> Receive : vorhandene TreeNode-Funktionen
+Agent --> Result : vorhandene TreeNode-Events
+Timer --> Timeout
+Register .> Validate : <<include>>
+Stream .> Prepare : <<include>>
+Prepare .> Activate : <<include>>
+Devices .> Renew : <<include>>
+Timeout .> Cleanup : <<include>>
+Unregister .> Cleanup : <<include>>
+Integration --> ReRegister
+ReRegister .> Register : <<include>>
+ReRegister .> Stream : <<include>>
+Receive .> Result : <<include>>
+note bottom of ReRegister
+  Vorbedingung: Die alte Session wurde nach
+  Streamverlust oder Timeout vollständig beendet.
+end note
+@enduml

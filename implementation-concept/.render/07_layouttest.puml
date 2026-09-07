@@ -1,0 +1,1174 @@
+@startuml
+title DeviceIntegrationPlugin – geprüftes Ziel-Klassendiagramm für die Implementierung
+top to bottom direction
+skinparam dpi 150
+skinparam linetype ortho
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam nodesep 28
+skinparam ranksep 38
+hide circle
+hide empty members
+
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #315A7D
+  ArrowColor #315A7D
+  FontColor #18344D
+  BackgroundColor<<begonnen>> #E7F6EA
+  BorderColor<<begonnen>> #2E7D32
+  BackgroundColor<<neu>> #EAF3FB
+  BorderColor<<neu>> #1976B9
+  BackgroundColor<<extrahieren>> #FFF3D6
+  BorderColor<<extrahieren>> #C17D00
+  BackgroundColor<<wiederverwenden>> #F1F1F1
+  BorderColor<<wiederverwenden>> #777777
+  BackgroundColor<<anpassen>> #FDEDD7
+  BorderColor<<anpassen>> #B66A12
+  BackgroundColor<<out-of-scope>> #FAE8E8
+  BorderColor<<out-of-scope>> #B54848
+  BackgroundColor<<test>> #F4EAFB
+  BorderColor<<test>> #76519A
+}
+
+legend right
+  |= Farbe |= Bedeutung |
+  |<#E7F6EA>| im neuen Plugin bereits als Datei angelegt |
+  |<#EAF3FB>| für die Bachelorarbeit neu implementieren |
+  |<#FFF3D6>| aus dem Showcase-AgentManager extrahieren und weiterentwickeln |
+  |<#F1F1F1>| vorhandenen Vertrag / vorhandene Klasse wiederverwenden |
+  |<#FDEDD7>| vorhandene gemeinsame Basis oder Composition Root anpassen |
+  |<#FAE8E8>| bestehende Grenze; Low Priority oder Out of Scope |
+  |<#F4EAFB>| automatisierter Test |
+endlegend
+
+package "A · zenLAB-Framework (unverändert verwenden)" as Framework {
+  interface IPlugin <<wiederverwenden>>
+  interface IPartImportsSatisfiedNotification <<wiederverwenden>> {
+    +OnImportsSatisfied()
+  }
+  abstract class "ServicePluginBase<TPlugin>" as ServicePluginBase_T <<wiederverwenden>> {
+    #ServiceHostHelpers : List<IServiceHostHelper>
+    #ServiceNameList : Dictionary<string, Type>
+    +GetServiceNames() : List<string>
+  }
+  interface IWatchableService <<wiederverwenden>> {
+    +WatchAsync(secondsBetweenUpdates: ValueTypeRequest<int>, context = default) : IAsyncEnumerable<WatchResult>
+  }
+  interface IServiceHostService <<wiederverwenden>> {
+    +Ping() : ValueTypeResponse<bool>
+  }
+  abstract class "SmartProxy<TChannel>" as SmartProxy_T <<wiederverwenden>> {
+    #ExecuteFunc<TResult>(call) : TResult
+    #ExecuteFuncAsync<TResult>(call) : Task<TResult>
+    #StreamAsync<TResult>(call, context) : IAsyncEnumerable<TResult>
+    +Dispose()
+  }
+  interface IClientBuilder <<wiederverwenden>> {
+    +Build<T>() : IClient<T>
+    +WithHostName(hostName: string) : IClientBuilder
+    +WithPort(port: int) : IClientBuilder
+    +WithSecurityFactory(factory) : IClientBuilder
+    +WithPermanentClient() : IClientBuilder
+  }
+  class ClientBuilder <<wiederverwenden>>
+  interface IClientBuilderAssembly <<wiederverwenden>> {
+    +Assemble() : IClientBuilder
+  }
+  interface IServiceHostHelper <<wiederverwenden>> {
+    +Start<TService>(instance, host, port, securityFactory)
+    +Stop() : bool
+    +StopAsync() : Task
+  }
+  class ServiceHostHelper <<wiederverwenden>>
+  interface IConfigUtils <<wiederverwenden>> {
+    +GetEndpoint(name: string)
+    +GetClientSecurityConfiguration(name: string)
+    +GetServerSecurityConfiguration(name: string)
+  }
+  class EmptyRequest <<wiederverwenden>>
+  class EmptyResponse <<wiederverwenden>>
+  class "ValueTypeRequest<T>" as ValueTypeRequest_T <<wiederverwenden>>
+  class "ValueTypeResponse<T>" as ValueTypeResponse_T <<wiederverwenden>>
+  class WatchResult <<wiederverwenden>>
+}
+
+package "B · DeviceIntegrationPlugin.Contracts" as Contracts {
+  interface IDeviceIntegrationClientService <<neu>> {
+    +GetIntegrationsAsync(request: EmptyRequest, context = default) : Task<GetIntegrationsResponseDto>
+    +GetDevicesAsync(request: EmptyRequest, context = default) : Task<GetDevicesResponseDto>
+    +IsDeviceAvailableAsync(request: DeviceRequestDto, context = default) : Task<ValueTypeResponse<bool>>
+    +GetNodeInfoAsync(request: TreePathRequestDto, context = default) : Task<NodeInfoDto>
+    +GetSubnodesAsync(request: GetSubnodesRequestDto, context = default) : Task<GetNodesResponseDto>
+    +GetTreePathInfoAsync(request: TreePathRequestDto, context = default) : Task<TreePathInfoDto>
+    +GetValueAsync(request: TreePathRequestDto, context = default) : Task<NodeValueDto>
+    +SetValueAsync(request: SetValueRequestDto, context = default) : Task<MethodResultDto>
+    +CallMethodAsync(request: CallMethodRequestDto, context = default) : Task<MethodResultDto>
+    +SubscribeNodeValueChangesAsync(request: SubscribeNodeRequestDto, context = default) : Task<MethodResultDto>
+    +UnsubscribeNodeValueChangesAsync(request: UnsubscribeNodeRequestDto, context = default) : Task<MethodResultDto>
+    +UnsubscribeAllNodeValueChangesAsync(request: UnsubscribeAllNodesRequestDto, context = default) : Task<MethodResultsDto>
+    +WatchEvents(request: ClientEventStreamRequestDto, context = default) : IAsyncEnumerable<ClientEventDto>
+  }
+  interface IDeviceIntegrationAgentService <<neu>> {
+    +RegisterIntegrationAsync(request: RegisterIntegrationRequestDto, context = default) : Task<RegistrationResponseDto>
+    +NotifyDeviceListAsync(request: NotifyDeviceListRequestDto, context = default) : Task<EmptyResponse>
+    +Connect(messages: IAsyncEnumerable<IntegrationToPluginMessageDto>, context = default) : IAsyncEnumerable<PluginToIntegrationMessageDto>
+    +UnregisterIntegrationAsync(request: UnregisterIntegrationRequestDto, context = default) : Task<EmptyResponse>
+  }
+  class DeviceIntegrationClientServiceProxy <<neu>> {
+    +DeviceIntegrationClientServiceProxy(builder: IClientBuilder)
+    +alle Operationen von IDeviceIntegrationClientService
+  }
+  class DeviceIntegrationAgentServiceProxy <<neu>> {
+    +DeviceIntegrationAgentServiceProxy(builder: IClientBuilder)
+    +alle Operationen von IDeviceIntegrationAgentService
+  }
+  class DeviceIntegrationClientBuilderAssembly <<neu>> {
+    -configUtils : IConfigUtils
+    +Assemble() : IClientBuilder
+  }
+  class DeviceIntegrationAgentBuilderAssembly <<neu>> {
+    -configUtils : IConfigUtils
+    +Assemble() : IClientBuilder
+  }
+  class EndpointNames <<neu>> {
+    {static} +ClientService : string
+    {static} +AgentService : string
+  }
+}
+
+package "C · Transportmodelle (protobuf-net)" as Transport {
+  class ServiceIdentificationDto <<neu>> {
+    +Id : string
+  }
+  class ServiceSessionKey <<neu>> {
+    +ServiceId : string
+    +RegistrationId : Guid
+  }
+  class IntegrationMetadataDto <<neu>> {
+    +Name : string
+    +SoftwareVersion : string
+    +Location : string
+    +DeviceName : string
+    +HardwareVersion : string
+    +Configuration : Dictionary<string, string>
+  }
+  class DeviceDescriptorDto <<neu>> {
+    +DeviceId : string
+    +BrowseName : string
+    +DeviceName : string
+    +SerialNumber : string
+    +Manufacturer : string
+    +ModelName : string
+    +DeviceManualLocation : string
+  }
+  enum IntegrationState <<neu>> {
+    Registering
+    Connecting
+    Active
+    Stale
+    Unregistered
+  }
+  class IntegrationDescriptorDto <<neu>> {
+    +Service : ServiceIdentificationDto
+    +Metadata : IntegrationMetadataDto
+    +State : IntegrationState
+    +Devices : List<DeviceDescriptorDto>
+  }
+  class RegisterIntegrationRequestDto <<neu>> {
+    +RequestedServiceId : string
+    +Metadata : IntegrationMetadataDto
+    +Devices : List<DeviceDescriptorDto>
+  }
+  class RegistrationResponseDto <<neu>> {
+    +Service : ServiceIdentificationDto
+    +RegistrationId : Guid
+    +DeviceListUpdateInterval : TimeSpan
+    +UpdateTolerance : TimeSpan
+    +PluginVersion : string
+  }
+  class NotifyDeviceListRequestDto <<neu>> {
+    +RegistrationId : Guid
+    +Devices : List<DeviceDescriptorDto>
+  }
+  class UnregisterIntegrationRequestDto <<neu>> {
+    +RegistrationId : Guid
+  }
+  class GetIntegrationsResponseDto <<neu>> {
+    +Integrations : List<IntegrationDescriptorDto>
+  }
+  class GetDevicesResponseDto <<neu>> {
+    +Devices : List<DeviceDescriptorDto>
+  }
+  class DeviceRequestDto <<neu>> {
+    +DeviceId : string
+  }
+
+  class TreePathRequestDto <<neu>> {
+    +DeviceId : string
+    +TreePath : string
+  }
+  class GetSubnodesRequestDto <<neu>> {
+    +DeviceId : string
+    +TreePath : string
+    +OnlyChildren : bool
+  }
+  class SetValueRequestDto <<neu>> {
+    +DeviceId : string
+    +TreePath : string
+    +NewValue : NodeValueDto
+  }
+  class CallMethodRequestDto <<neu>> {
+    +DeviceId : string
+    +TreePath : string
+    +Parameters : List<ActionParameterDto>
+  }
+  class SubscribeNodeRequestDto <<neu>> {
+    +DeviceId : string
+    +TreePath : string
+    +RequestorId : string
+  }
+  class UnsubscribeNodeRequestDto <<neu>> {
+    +DeviceId : string
+    +NodeId : string
+  }
+  class UnsubscribeAllNodesRequestDto <<neu>> {
+    +DeviceId : string
+    +NodeIds : List<string>
+  }
+  class GetNodesResponseDto <<neu>> {
+    +Nodes : List<NodeInfoDto>
+  }
+  class MethodResultsDto <<neu>> {
+    +Results : List<MethodResultDto>
+  }
+
+  enum NodeClassDto <<neu>> {
+    Node
+    HasValue
+    Callable
+    Unspecified
+  }
+  class NodeInfoDto <<neu>> {
+    +DisplayName : string
+    +Id : string
+    +BrowseName : string
+    +Class : NodeClassDto
+    +Path : string
+    +Attributes : List<NodeAttributeDto>
+    +Actions : List<NodeActionDto>
+  }
+  class TreePathInfoDto <<neu>> {
+    +Reachable : bool
+    +NodeClass : string
+    +NodeId : string
+    +NodeActions : List<NodeActionDto>
+  }
+  class NodeValueDto <<neu>> {
+    +Value : TransportValueDto
+    +DataType : string
+    +ValueTimestamp : DateTime
+    +NodeActions : List<NodeActionDto>
+  }
+  class NodeAttributeDto <<neu>> {
+    +Name : string
+    +DataType : string
+    +Value : TransportValueDto
+  }
+  class NodeActionDto <<neu>> {
+    +Name : string
+    +Parameters : List<ActionParameterDto>
+  }
+  class ActionParameterDto <<neu>> {
+    +Name : string
+    +DataType : string
+    +Value : TransportValueDto
+  }
+  class MethodResultDto <<neu>> {
+    +Type : string
+    +ErrorMessage : string
+    +ExecutionSuccessful : bool
+  }
+  enum TransportValueKind <<neu>> {
+    String; Boolean; Integer; UnsignedInteger; Double; DateTime
+    ActionParameterList; SerializedJsonString; Null
+  }
+  class TransportValueDto <<neu>> {
+    +Kind : TransportValueKind
+    +StringValue : string
+    +BooleanValue : bool?
+    +IntegerValue : long?
+    +UnsignedIntegerValue : ulong?
+    +DoubleValue : double?
+    +DateTimeValue : DateTime?
+    +ActionParameters : List<ActionParameterDto>
+    +JsonValue : string
+  }
+
+  enum ClientEventType <<neu>> {
+    IntegrationConnected; IntegrationDisconnected; DevicesListChanged
+    NodeValueChanged; SubscriptionCreated; SubscriptionDisposed
+    ChildNodeAdded; ChildNodeRemoved
+  }
+  class ClientEventStreamRequestDto <<neu>> {
+    +ClientId : string
+  }
+  class ClientEventDto <<neu>> {
+    +Type : ClientEventType
+    +Service : ServiceIdentificationDto
+    +DeviceId : string
+    +NodeValueChanged : NodeValueChangedEventDto
+    +SubscriptionCreated : SubscriptionCreatedEventDto
+    +SubscriptionDisposed : SubscriptionDisposedEventDto
+    +ChildNodeChanged : ChildNodeChangedEventDto
+    +Devices : List<DeviceDescriptorDto>
+  }
+  class NodeValueChangedEventDto <<neu>> {
+    +NodeId : string
+    +Value : TransportValueDto
+    +ValueDataType : string
+  }
+  class SubscriptionCreatedEventDto <<neu>> {
+    +NodeId : string
+    +RequestorId : string
+    +Value : TransportValueDto
+    +ValueDataType : string
+  }
+  class SubscriptionDisposedEventDto <<neu>> {
+    +NodeId : string
+  }
+  class ChildNodeChangedEventDto <<neu>> {
+    +ParentNodeId : string
+    +Child : NodeInfoDto
+  }
+
+  enum PluginMessageType <<neu>> {
+    ConnectionAccepted
+    JobRequest
+    Disconnect
+  }
+  enum IntegrationMessageType <<neu>> {
+    Connect
+    JobResult
+    AgentEvent
+  }
+  class PluginToIntegrationMessageDto <<neu>> {
+    +RegistrationId : Guid
+    +Type : PluginMessageType
+    +Job : JobRequestEnvelopeDto
+    +Reason : string
+  }
+  class IntegrationToPluginMessageDto <<neu>> {
+    +RegistrationId : Guid
+    +Type : IntegrationMessageType
+    +Result : JobResultEnvelopeDto
+    +Event : AgentEventDto
+  }
+  enum DeviceOperation <<neu>> {
+    GetNodeInfo; GetSubnodes; GetTreePathInfo; GetValue; SetValue
+    CallMethod; Subscribe; Unsubscribe; UnsubscribeAll
+  }
+  class JobRequestEnvelopeDto <<neu>> {
+    +Operation : DeviceOperation
+    +Service : ServiceIdentificationDto
+    +RegistrationId : Guid
+    +JobId : ulong
+    +SerializedParameter : string
+  }
+  class JobResultEnvelopeDto <<neu>> {
+    +Operation : DeviceOperation
+    +Service : ServiceIdentificationDto
+    +RegistrationId : Guid
+    +JobId : ulong
+    +Succeeded : bool
+    +SerializedValue : string
+    +Exception : ExceptionDto
+  }
+  enum AgentEventType <<neu>> {
+    NodeValueChanged; SubscriptionCreated; SubscriptionDisposed
+    ChildNodeAdded; ChildNodeRemoved
+  }
+  class AgentEventDto <<neu>> {
+    +Type : AgentEventType
+    +NodeValueChanged : NodeValueChangedEventDto
+    +SubscriptionCreated : SubscriptionCreatedEventDto
+    +SubscriptionDisposed : SubscriptionDisposedEventDto
+    +ChildNodeChanged : ChildNodeChangedEventDto
+  }
+  class ExceptionDto <<extrahieren>> {
+    +Type : string
+    +Message : string
+    +StackTrace : string
+  }
+}
+
+package "D · Plugin-Host und gRPC-Services" as PluginHost {
+  class Plugin <<begonnen>> {
+    -dependencyContainer : ILifetimeScope
+    -runtime : IDeviceIntegrationPluginRuntime
+    +IconPath : string
+    +Initialize(injectDependencies)
+    +OnImportsSatisfied()
+    +UnInitialize() : bool
+    -StartService<T>(scope, endpointName)
+  }
+  class DeviceIntegrationDependencyInjector <<begonnen>> {
+    {static} +InjectDependencies(builder: ContainerBuilder)
+  }
+  interface IDeviceIntegrationPluginRuntime <<neu>> {
+    +Start()
+    +StopAsync() : Task
+  }
+  class DeviceIntegrationPluginRuntime <<neu>> {
+    -leaseMonitor : ILeaseMonitor
+    -connections : IIntegrationConnectionManager
+    +Start()
+    +StopAsync() : Task
+  }
+  class DeviceIntegrationClientService <<begonnen>> {
+    -registry : IDeviceRegistry
+    -dispatcher : IDeviceOperationDispatcher
+    -subscriptions : ISubscriptionManager
+    -eventHub : IClientEventHub
+    +alle Operationen von IDeviceIntegrationClientService
+  }
+  class DeviceIntegrationAgentService <<begonnen>> {
+    -lifecycle : IIntegrationLifecycleCoordinator
+    -connections : IIntegrationConnectionManager
+    +alle Operationen von IDeviceIntegrationAgentService
+  }
+}
+
+package "E · Registry, IDs und Lease-Lebenszyklus" as RegistryPkg {
+  interface IDeviceRegistry <<neu>> {
+    +Register(request, now) : IntegrationRegistration
+    +Activate(session: ServiceSessionKey)
+    +ReplaceDeviceSnapshot(session, devices, now)
+    +ResolveDevice(deviceId: string) : DeviceRoute
+    +GetByRegistrationId(id: Guid) : IntegrationRegistration
+    +GetIntegrations() : IReadOnlyCollection<IntegrationRegistration>
+    +GetDevices() : IReadOnlyCollection<DeviceDescriptorDto>
+    +FindExpired(now) : IReadOnlyCollection<ServiceSessionKey>
+    +Remove(session) : IntegrationRegistration
+  }
+  class DeviceRegistry <<neu>> {
+    -byRegistrationId : ConcurrentDictionary<Guid, IntegrationRegistration>
+    -serviceToRegistration : ConcurrentDictionary<string, Guid>
+    -deviceToRoute : ConcurrentDictionary<string, DeviceRoute>
+    +alle Änderungen atomar unter einer Registry-Synchronisation
+  }
+  class IntegrationRegistration <<neu>> {
+    +Session : ServiceSessionKey
+    +Metadata : IntegrationMetadataDto
+    +LastDeviceListNotificationUtc : DateTime
+    +State : IntegrationState
+    +Devices : IReadOnlyCollection<DeviceDescriptorDto>
+  }
+  class DeviceRoute <<neu>> {
+    +DeviceId : string
+    +BrowseName : string
+    +Session : ServiceSessionKey
+  }
+  interface IServiceIdPolicy <<neu>> {
+    +Reserve(requestedId: string) : ServiceIdentificationDto
+    +Release(service: ServiceIdentificationDto)
+  }
+  class UniqueServiceIdPolicy <<neu>>
+  interface IDeviceIdPolicy <<neu>> {
+    +CreateOrValidate(device: DeviceDescriptorDto) : string
+  }
+  class CompatibleDeviceIdPolicy <<neu>>
+  class DeviceIntegrationOptions <<neu>> {
+    +DeviceListUpdateInterval : TimeSpan
+    +UpdateTolerance : TimeSpan
+    +RequestTimeout : TimeSpan
+    +ChannelCapacity : int
+    +PluginVersion : string
+  }
+  interface IIntegrationLifecycleCoordinator <<neu>> {
+    +Register(request) : RegistrationResponseDto
+    +GetSession(registrationId) : ServiceSessionKey
+    +Activate(session)
+    +NotifyDeviceList(registrationId, fullSnapshot)
+    +ConnectionClosed(session)
+    +Unregister(registrationId)
+    +Expire(session)
+  }
+  class IntegrationLifecycleCoordinator <<neu>> {
+    -registry : IDeviceRegistry
+    -transmitters : DeviceOperationTransmitterCatalog
+    -subscriptions : ISubscriptionManager
+    -eventHub : IClientEventHub
+  }
+  interface ILeaseMonitor <<neu>> {
+    +Start()
+    +StopAsync() : Task
+  }
+  class LeaseMonitor <<neu>> {
+    -registry : IDeviceRegistry
+    -lifecycle : IIntegrationLifecycleCoordinator
+    -connections : IIntegrationConnectionManager
+    -options : DeviceIntegrationOptions
+    -RunAsync(token) : Task
+  }
+}
+
+package "F · Service-Forward-Routing – aus AgentManager herauslösen" as RoutingPkg {
+  class "JobRequest<T>" as JobRequest_T <<extrahieren>> {
+    +JobId : ulong
+    +Service : ServiceIdentificationDto
+    +RegistrationId : Guid
+    +SerializedParameter : string
+    +Parameter : T <<IgnoreDataMember>>
+  }
+  class "JobResult<T>" as JobResult_T <<extrahieren>> {
+    +JobId : ulong
+    +Service : ServiceIdentificationDto
+    +RegistrationId : Guid
+    +Succeeded : bool
+    +Exception : ExceptionDto
+    +SerializedValue : string
+    +Value : T <<IgnoreDataMember>>
+  }
+  class "SerializedGeneric<T>" as SerializedGeneric_T <<extrahieren>> {
+    +GetSerialized() : string
+    +SetSerialized(value: string)
+    +GetCache() : T
+    +SetCache(value: T)
+  }
+  interface IJobRequestFactory <<extrahieren>> {
+    +Create<T>(parameter: T, target: ServiceSessionKey) : JobRequest<T>
+  }
+  class JobRequestFactory <<extrahieren>>
+  interface "IJobTransmitter<TRequest, TResult>" as IJobTransmitter_T <<extrahieren>> {
+    +RequestTimeout : TimeSpan
+    +GetRequestStream(token) : IAsyncEnumerable<JobRequest<TRequest>>
+    +GetResultStream(token) : IAsyncEnumerable<JobResult<TResult>>
+    +TransmitJob(request)
+    +TransmitJobAndWaitForResult(request, token) : Task<JobResult<TResult>>
+    +NotifyJobResult(result)
+    +NotifyEventResult(result)
+    +Dispose()
+  }
+  class "JobTransmitter<TRequest, TResult>" as JobTransmitter_T <<extrahieren>>
+  class "BufferedMessageStream<T>" as BufferedMessageStream_T <<extrahieren>> {
+    -channel : Channel<T> <<bounded>>
+    -subscription : IDisposable
+    +ReadAllAsync(token) : IAsyncEnumerable<T>
+    +Dispose()
+  }
+  interface "IMultiServiceJobTransmitter<TRequest, TResult>" as IMultiServiceJobTransmitter_T <<neu>> {
+    +ConnectedSessions : IReadOnlyCollection<ServiceSessionKey>
+    +GetRequestStream(session, token) : IAsyncEnumerable<JobRequest<TRequest>>
+    +TransmitTargetedAsync(session, request, token) : Task<JobResult<TResult>>
+    +TransmitBroadcastAsync(request, token) : Task<IReadOnlyList<JobResult<TResult>>>
+    +NotifyJobResult(session, result)
+    +RemoveSession(session)
+    +Dispose()
+  }
+  class "MultiServiceJobTransmitter<TRequest, TResult>" as MultiServiceJobTransmitter_T <<neu>> {
+    -workers : ConcurrentDictionary<ServiceSessionKey, IJobTransmitter<TRequest, TResult>>
+  }
+  interface IJobFacade <<extrahieren>> {
+    +QueueJobAndWaitForResult<TRequest, TResult>(transmitter, request, target, token) : Task<TResult>
+    +QueueJobAndWaitForResults<TRequest, TResult>(transmitter, request, token) : Task<IReadOnlyList<JobResult<TResult>>>
+    +QueueJobAndAggregateResults<TRequest, TResult, TAggregate>(transmitter, request, aggregate, token) : Task<TAggregate>
+    +SubscribeEndpoint<TResult>(subscribe, unsubscribe, token) : IAsyncEnumerable<JobResult<TResult>>
+    +SubscribeEndpoint<TResult>(subscribe, unsubscribe, target, token) : IAsyncEnumerable<JobResult<TResult>>
+  }
+  class JobFacade <<extrahieren>> {
+    -requestFactory : IJobRequestFactory
+  }
+  class DeviceOperationTransmitterCatalog <<neu>> {
+    +GetNodeInfo : IMultiServiceJobTransmitter<TreePathRequestDto, NodeInfoDto>
+    +GetSubnodes : IMultiServiceJobTransmitter<GetSubnodesRequestDto, GetNodesResponseDto>
+    +GetTreePathInfo : IMultiServiceJobTransmitter<TreePathRequestDto, TreePathInfoDto>
+    +GetValue : IMultiServiceJobTransmitter<TreePathRequestDto, NodeValueDto>
+    +SetValue : IMultiServiceJobTransmitter<SetValueRequestDto, MethodResultDto>
+    +CallMethod : IMultiServiceJobTransmitter<CallMethodRequestDto, MethodResultDto>
+    +Subscribe : IMultiServiceJobTransmitter<SubscribeNodeRequestDto, MethodResultDto>
+    +Unsubscribe : IMultiServiceJobTransmitter<UnsubscribeNodeRequestDto, MethodResultDto>
+    +UnsubscribeAll : IMultiServiceJobTransmitter<UnsubscribeAllNodesRequestDto, MethodResultsDto>
+    +RemoveSession(session)
+  }
+  interface IDeviceOperationDispatcher <<neu>> {
+    +DispatchAsync<TResponse>(operation, request, token) : Task<TResponse>
+  }
+  class DeviceOperationDispatcher <<neu>> {
+    -registry : IDeviceRegistry
+    -facade : IJobFacade
+    -transmitters : DeviceOperationTransmitterCatalog
+  }
+  interface IJobMessageCodec <<neu>> {
+    +Encode<T>(operation, job: JobRequest<T>) : JobRequestEnvelopeDto
+    +DecodeRequest<T>(envelope) : JobRequest<T>
+    +Encode<T>(operation, result: JobResult<T>) : JobResultEnvelopeDto
+    +DecodeResult<T>(envelope) : JobResult<T>
+  }
+  class JobMessageCodec <<neu>>
+}
+
+package "G · genau eine Duplex-Verbindung je Registrierung" as ConnectionPkg {
+  interface IIntegrationConnectionManager <<neu>> {
+    +Connect(incoming, context) : IAsyncEnumerable<PluginToIntegrationMessageDto>
+    +Disconnect(session, reason)
+    +StopAsync() : Task
+  }
+  class IntegrationConnectionManager <<neu>> {
+    -connections : ConcurrentDictionary<ServiceSessionKey, IntegrationConnection>
+    -lifecycle : IIntegrationLifecycleCoordinator
+    -messageRouter : IIntegrationMessageRouter
+  }
+  class IntegrationConnection <<neu>> {
+    +Session : ServiceSessionKey
+    -outgoing : Channel<PluginToIntegrationMessageDto> <<bounded>>
+    -cancellation : CancellationTokenSource
+    +SendAsync(message, token)
+    +ReadOutgoingAsync(token) : IAsyncEnumerable<PluginToIntegrationMessageDto>
+    +StopAsync(reason) : Task
+    +DisposeAsync()
+  }
+  interface IIntegrationMessageRouter <<neu>> {
+    +PumpJobRequestsAsync(connection, token) : Task
+    +HandleIncomingAsync(session, message, token) : Task
+  }
+  class IntegrationMessageRouter <<neu>> {
+    -transmitters : DeviceOperationTransmitterCatalog
+    -codec : IJobMessageCodec
+    -subscriptions : ISubscriptionManager
+  }
+}
+
+package "H · Subscriptions und Client-Ereignisse" as SubscriptionPkg {
+  interface ISubscriptionManager <<neu>> {
+    +SubscribeAsync(request, token) : Task<MethodResultDto>
+    +UnsubscribeAsync(request, token) : Task<MethodResultDto>
+    +UnsubscribeAllAsync(request, token) : Task<MethodResultsDto>
+    +HandleAgentEvent(session, event)
+    +RemoveSession(session)
+  }
+  class SubscriptionManager <<neu>> {
+    -entries : ConcurrentDictionary<SubscriptionKey, SubscriptionEntry>
+    -nodeIndex : ConcurrentDictionary<SessionNodeKey, SubscriptionKey>
+    -dispatcher : IDeviceOperationDispatcher
+    -eventHub : IClientEventHub
+  }
+  class SubscriptionKey <<neu>> {
+    +Session : ServiceSessionKey
+    +DeviceId : string
+    +TreePath : string
+  }
+  class SessionNodeKey <<neu>> {
+    +Session : ServiceSessionKey
+    +NodeId : string
+  }
+  class SubscriptionEntry <<neu>> {
+    +Key : SubscriptionKey
+    +NodeId : string
+    +State : SubscriptionState
+    +LastValue : TransportValueDto
+    +Clients : HashSet<string>
+    +AddClient(requestorId) : bool
+    +RemoveClient(requestorId) : bool
+    +HasClients : bool
+  }
+  enum SubscriptionState <<neu>> {
+    Pending
+    Active
+    Disposed
+  }
+  interface IClientEventHub <<neu>> {
+    +Watch(clientId, token) : IAsyncEnumerable<ClientEventDto>
+    +PublishTo(clientId, event)
+    +PublishToAll(event)
+    +RemoveClient(clientId)
+  }
+  class ClientEventHub <<neu>> {
+    -clients : ConcurrentDictionary<string, Channel<ClientEventDto>>
+    -channelCapacity : int
+  }
+}
+
+package "I · DeviceAgent-Prozess / Integration Client" as AgentSide {
+  interface IDeviceIntegrationAgentRuntime <<neu>> {
+    +StartAsync(token) : Task
+    +StopAsync() : Task
+  }
+  class DeviceIntegrationAgentRuntime <<neu>> {
+    -serviceProxy : DeviceIntegrationAgentServiceProxy
+    -snapshotProvider : IDeviceSnapshotProvider
+    -jobDispatcher : IIntegrationJobDispatcher
+    -eventForwarder : IDeviceAgentEventForwarder
+    -deviceListNotifier : IDeviceListNotifier
+    -outgoing : Channel<IntegrationToPluginMessageDto> <<bounded>>
+    -registration : RegistrationResponseDto
+    +StartAsync(token) : Task
+    +StopAsync() : Task
+    -RegisterAndConnectAsync(token) : Task
+    -ReconnectAsync(token) : Task
+    +DisposeAsync()
+  }
+  interface IDeviceListNotifier <<neu>> {
+    +RunAsync(registration, token) : Task
+    +NotifyImmediatelyAsync(token) : Task
+  }
+  class DeviceListNotifier <<neu>> {
+    -service : IDeviceIntegrationAgentService
+    -snapshotProvider : IDeviceSnapshotProvider
+    -intervalFromRegistrationResponse : TimeSpan
+  }
+  interface IDeviceSnapshotProvider <<neu>> {
+    +GetFullSnapshot() : IReadOnlyCollection<DeviceDescriptorDto>
+  }
+  class DeviceSnapshotProvider <<neu>>
+  interface IDeviceAgentEventForwarder <<neu>> {
+    +Start(writer, registrationId)
+    +Stop()
+  }
+  class DeviceAgentEventForwarder <<neu>> {
+    -treeAgent : ITreeNodesBasedDeviceAgent
+    -multipleDevicesAgent : IMultipleDevicesAgent
+    -structureEvents : ITreeNodeStructureEvents
+    -deviceListNotifier : IDeviceListNotifier
+  }
+  interface IIntegrationJobDispatcher <<neu>> {
+    +ExecuteAsync(request: JobRequestEnvelopeDto, token) : Task<JobResultEnvelopeDto>
+  }
+  class IntegrationJobDispatcher <<neu>> {
+    -treeAgent : ITreeNodesBasedDeviceAgent
+    -mapper : IDeviceContractMapper
+    -workRunner : IWorkRunner
+    -codec : IJobMessageCodec
+  }
+  interface IWorkRunner <<extrahieren>> {
+    +ExecuteAsync<TRequest, TResult>(job, work, token) : Task<JobResult<TResult>>
+  }
+  class WorkRunner <<extrahieren>>
+  interface IJobResultFactory <<extrahieren>> {
+    +Create<TRequest, TResult>(request, value, succeeded, exception) : JobResult<TResult>
+  }
+  class JobResultFactory <<extrahieren>>
+  interface IDeviceContractMapper <<neu>> {
+    +MapNodeInfo(model) : NodeInfoDto
+    +MapTreePathInfo(model) : TreePathInfoDto
+    +MapNodeValue(model) : NodeValueDto
+    +MapMethodResult(model) : MethodResultDto
+    +MapParameters(dtos)
+    +MapTransportValue(value, dataType) : TransportValueDto
+  }
+  class DeviceContractMapper <<neu>>
+  class DeviceIntegrationAgentModule <<neu>> {
+    +Register(builder)
+  }
+  interface ITreeNodesBasedDeviceAgent <<wiederverwenden>> {
+    +NodeValueChanged : event
+    +NotifyValueChangedSubscriptionCreated : event
+    +ValueChangedSubscriptionDisposed : event
+    +CallNodeMethod(treePath, parameters) : MethodResponse
+    +GetNodeInfoFromTreePath(treePath) : NodeInfo
+    +GetNodeValue(treePath) : ValueNodeValue
+    +GetSubnodesFromTreePath(treePath, onlyChildren) : NodeInfo[]
+    +GetTreePathInfo(treePath) : TreePathInfo
+    +SetNodeValue(treePath, newValue) : MethodResponse
+    +SubscribeNodeValueChanges(treePath, requestorId) : MethodResponse
+    +UnsubscribeNodeValueChanges(nodeId) : MethodResponse
+    +UnsubscribeAllNodeValueChanges(nodeIds) : MethodResponse[]
+  }
+  interface IMultipleDevicesAgent <<wiederverwenden>> {
+    +DeviceAdded : event Action<AddedDeviceEventArgs>
+    +DeviceCount : event Action<int>
+    +GetDevicesInfo() : DeviceInfo[]
+  }
+  interface ITreeNodeStructureEvents <<neu>> {
+    +ChildNodeAdded : event
+    +ChildNodeRemoved : event
+  }
+  class DeviceAgentCompositionRoot <<anpassen>> {
+    +erzeugt AgentRuntime, Proxy und vorhandenen DeviceAgent
+    +disposed Proxy und Runtime beim Prozessende
+  }
+  class ConcreteDeviceAgents <<wiederverwenden>> {
+    +gerätespezifische Protokolle und TreeNode-Logik bleiben bestehen
+  }
+}
+
+package "J · bestehende TreeNode-WebAPI-Grenze" as ExistingWebApi {
+  class TreeNodeBasedClient <<out-of-scope>>
+  class "TreeNodeBased.WebAPI" as TreeNodeWebApi <<out-of-scope>>
+  class TreeNodeBasedDevicesController <<out-of-scope>>
+  class TreeBasedDevicesHub <<out-of-scope>>
+  interface IMediator <<out-of-scope>>
+  class RequestHandlers <<out-of-scope>>
+  interface ITreeNodeBasedDeviceManagement <<out-of-scope>> {
+    +bestehender Vertrag inklusive EnsureTreePathReachable
+    +GetDeviceManagementRegisteredState
+    +UnsubscribeAllNodeValueChanges
+  }
+  interface IDeviceCollectionContainer <<out-of-scope>>
+  interface IDeviceManagementEventNotifier <<out-of-scope>>
+  class DeviceIntegrationWebApiAdapter <<out-of-scope>> {
+    +übersetzt bestehenden Management-Vertrag in ClientService-Aufrufe
+  }
+  class DeviceIntegrationEventPump <<out-of-scope>> {
+    +liest WatchEvents und speist bestehende Events / Device-Liste ein
+  }
+  class DeviceIntegrationWebApiCompositionRoot <<out-of-scope>> {
+    +erzeugt und disposed DeviceIntegrationClientServiceProxy
+  }
+}
+
+package "K · AgentManager nach der Migration" as AgentManagerPkg {
+  class AgentManagerPlugin <<out-of-scope>> {
+    +startet DeviceAgent-Prozesse
+    +stoppt und überwacht DeviceAgent-Prozesse
+    +keine Router-, JobFacade- oder Transmitter-Abhängigkeit
+  }
+  class DeviceAgentProcess <<wiederverwenden>>
+}
+
+package "L · optionales Gateway (gleiche Verträge, keine Sonder-API)" as GatewayPkg {
+  class DeviceIntegrationGatewayBridge <<out-of-scope>> {
+    +verwendet downstream den ClientServiceProxy
+    +stellt upstream die vorhandenen Agent-Interfaces bereit
+  }
+  class GatewayCompositionRoot <<out-of-scope>> {
+    +kombiniert Client- und AgentRuntime
+  }
+}
+
+package "M · automatisierte Tests" as Tests {
+  class ServiceContractAndSerializationTests <<test>>
+  class SmartProxyContractTests <<test>>
+  class DeviceRegistryAndIdTests <<test>>
+  class IntegrationLifecycleTests <<test>>
+  class JobFacadeTargetAndBroadcastTests <<test>>
+  class MultiServiceRoutingIsolationTests <<test>>
+  class DuplexReconnectAndStaleSessionTests <<test>>
+  class SubscriptionReferenceCountingTests <<test>>
+  class ChannelBackpressureAndDisposalTests <<test>>
+  class TreeNodeCompatibilityTests <<test>>
+  class DeviceIntegrationEndToEndTests <<test>>
+}
+
+ServicePluginBase_T ..|> IPlugin
+Plugin --|> ServicePluginBase_T
+Plugin ..|> IPartImportsSatisfiedNotification
+IServiceHostService --|> IWatchableService
+ClientBuilder ..|> IClientBuilder
+ServiceHostHelper ..|> IServiceHostHelper
+DeviceIntegrationClientBuilderAssembly ..|> IClientBuilderAssembly
+DeviceIntegrationAgentBuilderAssembly ..|> IClientBuilderAssembly
+DeviceIntegrationClientBuilderAssembly --> IConfigUtils
+DeviceIntegrationAgentBuilderAssembly --> IConfigUtils
+DeviceIntegrationClientBuilderAssembly ..> ClientBuilder : Client-Endpunkt
+DeviceIntegrationAgentBuilderAssembly ..> ClientBuilder : Agent-Endpunkt
+
+IDeviceIntegrationClientService --|> IServiceHostService
+IDeviceIntegrationAgentService --|> IServiceHostService
+DeviceIntegrationClientServiceProxy --|> SmartProxy_T : <IDeviceIntegrationClientService>
+DeviceIntegrationAgentServiceProxy --|> SmartProxy_T : <IDeviceIntegrationAgentService>
+DeviceIntegrationClientServiceProxy ..|> IDeviceIntegrationClientService
+DeviceIntegrationAgentServiceProxy ..|> IDeviceIntegrationAgentService
+DeviceIntegrationClientService ..|> IDeviceIntegrationClientService
+DeviceIntegrationAgentService ..|> IDeviceIntegrationAgentService
+DeviceIntegrationClientServiceProxy --> IClientBuilder
+DeviceIntegrationAgentServiceProxy --> IClientBuilder
+
+ServiceSessionKey --> ServiceIdentificationDto
+IntegrationDescriptorDto *-- IntegrationMetadataDto
+IntegrationDescriptorDto *-- DeviceDescriptorDto
+RegisterIntegrationRequestDto *-- IntegrationMetadataDto
+RegisterIntegrationRequestDto *-- DeviceDescriptorDto
+RegistrationResponseDto --> ServiceIdentificationDto
+NotifyDeviceListRequestDto *-- DeviceDescriptorDto
+NodeInfoDto *-- NodeAttributeDto
+NodeInfoDto *-- NodeActionDto
+NodeValueDto *-- TransportValueDto
+NodeAttributeDto *-- TransportValueDto
+NodeActionDto *-- ActionParameterDto
+ActionParameterDto *-- TransportValueDto
+TransportValueDto --> TransportValueKind
+ClientEventDto --> ClientEventType
+ClientEventDto --> NodeValueChangedEventDto
+ClientEventDto --> SubscriptionCreatedEventDto
+ClientEventDto --> SubscriptionDisposedEventDto
+ClientEventDto --> ChildNodeChangedEventDto
+PluginToIntegrationMessageDto --> PluginMessageType
+PluginToIntegrationMessageDto --> JobRequestEnvelopeDto
+IntegrationToPluginMessageDto --> IntegrationMessageType
+IntegrationToPluginMessageDto --> JobResultEnvelopeDto
+IntegrationToPluginMessageDto --> AgentEventDto
+AgentEventDto --> AgentEventType
+JobRequestEnvelopeDto --> DeviceOperation
+JobResultEnvelopeDto --> DeviceOperation
+
+Plugin --> DeviceIntegrationDependencyInjector
+Plugin --> IDeviceIntegrationPluginRuntime : Resolve, Start, StopAsync
+Plugin "1" *-- "2" IServiceHostHelper : gehostete Services
+IServiceHostHelper ..> DeviceIntegrationClientService : hostet
+IServiceHostHelper ..> DeviceIntegrationAgentService : hostet
+DeviceIntegrationPluginRuntime ..|> IDeviceIntegrationPluginRuntime
+DeviceIntegrationPluginRuntime --> ILeaseMonitor
+DeviceIntegrationPluginRuntime --> IIntegrationConnectionManager
+DeviceIntegrationClientService --> IDeviceRegistry
+DeviceIntegrationClientService --> IDeviceOperationDispatcher
+DeviceIntegrationClientService --> ISubscriptionManager
+DeviceIntegrationClientService --> IClientEventHub
+DeviceIntegrationAgentService --> IIntegrationLifecycleCoordinator
+DeviceIntegrationAgentService --> IIntegrationConnectionManager
+
+DeviceRegistry ..|> IDeviceRegistry
+DeviceRegistry "1" o-- "*" IntegrationRegistration
+IntegrationRegistration --> ServiceSessionKey
+IntegrationRegistration *-- IntegrationMetadataDto
+IntegrationRegistration *-- DeviceDescriptorDto
+IntegrationRegistration --> IntegrationState
+DeviceRoute --> ServiceSessionKey
+UniqueServiceIdPolicy ..|> IServiceIdPolicy
+CompatibleDeviceIdPolicy ..|> IDeviceIdPolicy
+IntegrationLifecycleCoordinator ..|> IIntegrationLifecycleCoordinator
+IntegrationLifecycleCoordinator --> IDeviceRegistry
+IntegrationLifecycleCoordinator --> IServiceIdPolicy
+IntegrationLifecycleCoordinator --> IDeviceIdPolicy
+IntegrationLifecycleCoordinator --> DeviceOperationTransmitterCatalog
+IntegrationLifecycleCoordinator --> ISubscriptionManager
+IntegrationLifecycleCoordinator --> IClientEventHub
+IntegrationLifecycleCoordinator --> DeviceIntegrationOptions
+LeaseMonitor ..|> ILeaseMonitor
+LeaseMonitor --> IDeviceRegistry
+LeaseMonitor --> IIntegrationLifecycleCoordinator
+LeaseMonitor --> IIntegrationConnectionManager
+LeaseMonitor --> DeviceIntegrationOptions
+
+JobRequest_T *-- SerializedGeneric_T
+JobResult_T *-- SerializedGeneric_T
+JobRequest_T --> ServiceIdentificationDto
+JobResult_T --> ServiceIdentificationDto
+JobResult_T --> ExceptionDto
+JobRequestFactory ..|> IJobRequestFactory
+JobTransmitter_T ..|> IJobTransmitter_T
+JobTransmitter_T *-- BufferedMessageStream_T
+MultiServiceJobTransmitter_T ..|> IMultiServiceJobTransmitter_T
+MultiServiceJobTransmitter_T "1" *-- "*" JobTransmitter_T : je ServiceSessionKey
+JobFacade ..|> IJobFacade
+JobFacade --> IJobRequestFactory
+JobFacade --> IMultiServiceJobTransmitter_T
+DeviceOperationTransmitterCatalog "1" *-- "9" MultiServiceJobTransmitter_T : je TreeNode-Operation
+DeviceOperationDispatcher ..|> IDeviceOperationDispatcher
+DeviceOperationDispatcher --> IDeviceRegistry
+DeviceOperationDispatcher --> IJobFacade
+DeviceOperationDispatcher --> DeviceOperationTransmitterCatalog
+JobMessageCodec ..|> IJobMessageCodec
+JobMessageCodec ..> JobRequest_T
+JobMessageCodec ..> JobResult_T
+JobMessageCodec ..> JobRequestEnvelopeDto
+JobMessageCodec ..> JobResultEnvelopeDto
+
+IntegrationConnectionManager ..|> IIntegrationConnectionManager
+IntegrationConnectionManager "1" *-- "*" IntegrationConnection
+IntegrationConnectionManager --> IIntegrationLifecycleCoordinator
+IntegrationConnectionManager --> IIntegrationMessageRouter
+IntegrationMessageRouter ..|> IIntegrationMessageRouter
+IntegrationMessageRouter --> DeviceOperationTransmitterCatalog
+IntegrationMessageRouter --> IJobMessageCodec
+IntegrationMessageRouter --> ISubscriptionManager
+IntegrationConnection --> ServiceSessionKey
+
+SubscriptionManager ..|> ISubscriptionManager
+SubscriptionManager "1" *-- "*" SubscriptionEntry
+SubscriptionManager --> IDeviceOperationDispatcher
+SubscriptionManager --> IClientEventHub
+SubscriptionEntry --> SubscriptionKey
+SubscriptionEntry --> SubscriptionState
+SubscriptionEntry --> TransportValueDto
+SessionNodeKey --> ServiceSessionKey
+ClientEventHub ..|> IClientEventHub
+
+DeviceIntegrationAgentRuntime ..|> IDeviceIntegrationAgentRuntime
+DeviceIntegrationAgentRuntime *-- DeviceIntegrationAgentServiceProxy : besitzt und disposed
+DeviceIntegrationAgentRuntime --> IDeviceSnapshotProvider
+DeviceIntegrationAgentRuntime --> IIntegrationJobDispatcher
+DeviceIntegrationAgentRuntime --> IDeviceAgentEventForwarder
+DeviceIntegrationAgentRuntime --> IDeviceListNotifier
+DeviceListNotifier ..|> IDeviceListNotifier
+DeviceListNotifier --> IDeviceIntegrationAgentService
+DeviceListNotifier --> IDeviceSnapshotProvider
+DeviceSnapshotProvider ..|> IDeviceSnapshotProvider
+DeviceSnapshotProvider --> IMultipleDevicesAgent
+DeviceAgentEventForwarder ..|> IDeviceAgentEventForwarder
+DeviceAgentEventForwarder --> ITreeNodesBasedDeviceAgent
+DeviceAgentEventForwarder --> IMultipleDevicesAgent
+DeviceAgentEventForwarder --> ITreeNodeStructureEvents : falls vorhanden
+DeviceAgentEventForwarder --> IDeviceListNotifier : bei DeviceAdded / DeviceCount
+IntegrationJobDispatcher ..|> IIntegrationJobDispatcher
+IntegrationJobDispatcher --> ITreeNodesBasedDeviceAgent
+IntegrationJobDispatcher --> IDeviceContractMapper
+IntegrationJobDispatcher --> IWorkRunner
+IntegrationJobDispatcher --> IJobMessageCodec
+WorkRunner ..|> IWorkRunner
+WorkRunner --> IJobResultFactory
+JobResultFactory ..|> IJobResultFactory
+DeviceContractMapper ..|> IDeviceContractMapper
+DeviceIntegrationAgentModule ..> DeviceIntegrationAgentRuntime
+DeviceIntegrationAgentModule ..> DeviceIntegrationAgentServiceProxy
+DeviceAgentCompositionRoot *-- ConcreteDeviceAgents
+DeviceAgentCompositionRoot *-- DeviceIntegrationAgentRuntime
+ConcreteDeviceAgents ..|> ITreeNodesBasedDeviceAgent
+ConcreteDeviceAgents ..|> IMultipleDevicesAgent
+
+TreeNodeBasedClient --> TreeNodeWebApi : REST + SignalR, unverändert
+TreeNodeWebApi *-- TreeNodeBasedDevicesController
+TreeNodeWebApi *-- TreeBasedDevicesHub
+TreeNodeBasedDevicesController --> IMediator
+IMediator --> RequestHandlers
+RequestHandlers --> ITreeNodeBasedDeviceManagement
+RequestHandlers --> IDeviceCollectionContainer
+TreeBasedDevicesHub --> ITreeNodeBasedDeviceManagement
+DeviceIntegrationWebApiAdapter ..|> ITreeNodeBasedDeviceManagement
+DeviceIntegrationWebApiAdapter --> DeviceIntegrationClientServiceProxy
+DeviceIntegrationEventPump --> DeviceIntegrationClientServiceProxy : WatchEvents
+DeviceIntegrationEventPump --> IDeviceCollectionContainer
+DeviceIntegrationEventPump --> IDeviceManagementEventNotifier
+DeviceIntegrationWebApiCompositionRoot *-- DeviceIntegrationClientServiceProxy : besitzt und disposed
+DeviceIntegrationWebApiCompositionRoot *-- DeviceIntegrationWebApiAdapter
+DeviceIntegrationWebApiCompositionRoot *-- DeviceIntegrationEventPump
+
+AgentManagerPlugin --> DeviceAgentProcess : Prozess-Lebenszyklus
+DeviceAgentProcess *-- DeviceAgentCompositionRoot
+DeviceIntegrationGatewayBridge ..|> ITreeNodesBasedDeviceAgent
+DeviceIntegrationGatewayBridge ..|> IMultipleDevicesAgent
+DeviceIntegrationGatewayBridge --> DeviceIntegrationClientServiceProxy : downstream
+GatewayCompositionRoot *-- DeviceIntegrationGatewayBridge
+GatewayCompositionRoot *-- DeviceIntegrationAgentRuntime : upstream
+
+ServiceContractAndSerializationTests ..> Contracts
+ServiceContractAndSerializationTests ..> Transport
+SmartProxyContractTests ..> DeviceIntegrationClientServiceProxy
+SmartProxyContractTests ..> DeviceIntegrationAgentServiceProxy
+DeviceRegistryAndIdTests ..> DeviceRegistry
+IntegrationLifecycleTests ..> IntegrationLifecycleCoordinator
+JobFacadeTargetAndBroadcastTests ..> JobFacade
+MultiServiceRoutingIsolationTests ..> MultiServiceJobTransmitter_T
+DuplexReconnectAndStaleSessionTests ..> IntegrationConnectionManager
+SubscriptionReferenceCountingTests ..> SubscriptionManager
+ChannelBackpressureAndDisposalTests ..> BufferedMessageStream_T
+ChannelBackpressureAndDisposalTests ..> IntegrationConnection
+TreeNodeCompatibilityTests ..> DeviceContractMapper
+DeviceIntegrationEndToEndTests ..> Plugin
+DeviceIntegrationEndToEndTests ..> DeviceIntegrationAgentRuntime
+
+' erzwungene vertikale Hauptschichten
+TreeNodeBasedClient -[hidden]down-> DeviceIntegrationClientServiceProxy
+DeviceIntegrationClientServiceProxy -[hidden]down-> DeviceIntegrationClientService
+DeviceIntegrationClientService -[hidden]down-> DeviceRegistry
+DeviceRegistry -[hidden]down-> JobFacade
+JobFacade -[hidden]down-> IntegrationConnectionManager
+IntegrationConnectionManager -[hidden]down-> DeviceIntegrationAgentServiceProxy
+DeviceIntegrationAgentServiceProxy -[hidden]down-> DeviceIntegrationAgentRuntime
+
+note bottom of Contracts
+  <b>Code-first-gRPC-Regel:</b>
+  Beide Interfaces tragen [ServiceContract], jede Operation [OperationContract].
+  CallContext hat den Defaultwert default. Proxy und Server implementieren dasselbe
+  Interface. Die Proxyklassen sind die gRPC-Clients und verwenden ExecuteFuncAsync
+  bzw. StreamAsync des SmartProxy.
+end note
+
+note bottom of Transport
+  <b>Serialisierung:</b> Jede Transportklasse erhält [DataContract] und jedes Feld
+  eine dauerhaft stabile [DataMember(Order = n)]-Nummer. Nummern nie wiederverwenden.
+  Keine protobuf-Felder vom Typ object. Optionale Payloads sind je MessageType
+  eindeutig und werden validiert.
+  TreePath ist der vollständige Agent-TreePath; DeviceId dient der Routenauflösung.
+end note
+
+note bottom of RegistryPkg
+  <b>ID-Regeln:</b>
+  ServiceId = stabile, gewünschte und vom Plugin eindeutig reservierte Routing-ID.
+  RegistrationId = kurzlebige ID genau einer Verbindung. DeviceId = nach außen
+  stabile Geräte-ID; zunächst die bisherige Regel DeviceLocation + "-" + BrowseName
+  beibehalten oder explizit migrieren. NodeId = TreeNode- und Agent-Subscription-ID.
+  RequestorId = Subscribe-Aufrufer. JobId = Korrelation eines Router-Auftrags.
+
+  NotifyDeviceList enthält immer die <b>vollständige aktuelle Device-Liste</b> und
+  erneuert zugleich die Lease. Es gibt kein separates Agent-KeepAlive. Ping und
+  WatchAsync überwachen nur den gRPC-Service, nicht die Registrierung.
+end note
+
+note bottom of RoutingPkg
+  <b>Was aus dem AgentManager kommt:</b>
+  Im Showcase gibt es keine einzelne Klasse ServiceForwardRouter. Das Subsystem
+  besteht aus JobFacade, JobTransmitter, JobRequestFactory, JobRequest/JobResult,
+  BufferedMessageStream sowie WorkRunner/JobResultFactory. Es wird vollständig aus
+  den AgentManager-Projekten herausgelöst.
+
+  <b>Eigener Kernbeitrag:</b> mehrere ServiceSessionKeys, Zielrouting, Broadcast,
+  Ergebnisaggregation, gezielte/globale Subscriptions und sichere Session-Trennung.
+  BufferedMessageStream muss sein Observable-Abonnement disposen und einen
+  begrenzten Channel mit definierter Backpressure verwenden.
+end note
+
+note bottom of ConnectionPkg
+  Nach RegisterIntegration öffnet der Agent genau <b>eine</b> langlebige
+  bidirektionale gRPC-Verbindung. Der erste Agent-Frame ist Connect mit der
+  RegistrationId; der erste Server-Frame bestätigt. Erst dann ist die Registrierung
+  Active. Jobs werden per Operation multiplexed; Resultate und Events laufen zurück.
+  Alte RegistrationIds werden verworfen. Streamende, Timeout und Abmeldung nutzen
+  denselben idempotenten Cleanup-Pfad.
+end note
+
+note bottom of SubscriptionPkg
+  SubscribeNodeValueChanges liefert im vorhandenen Agent MethodResponse, keine
+  Stream- oder neue Subscription-ID. Die NodeId ist die Subscription-ID.
+  SubscriptionCreated liefert Initialwert + RequestorId; danach folgen Events.
+  Nur der erste Client löst Agent-Subscribe, nur der letzte Agent-Unsubscribe aus.
+  UnsubscribeAll gehört zum bestehenden Vertrag; Client-Queues sind begrenzt.
+end note
+
+note bottom of AgentSide
+  Konkrete DeviceAgents und Geräteprotokolle bleiben. Die gemeinsame Basis ist heute
+  aber an das alte DeviceManagementPlugin gekoppelt; Composition Root bzw. Basis
+  muss entkoppelt werden. Snapshots kommen aus IMultipleDevicesAgent, nicht aus
+  ITreeNodesBasedDeviceAgent. ChildNodeAdded/Removed fehlen heute und benötigen die
+  eingezeichnete kleine Event-Erweiterung.
+end note
+
+note bottom of ExistingWebApi
+  Low Priority / Out of Scope: TreeNodeBasedClient, Controller, Handler, Hub und
+  WebAPI-Verträge bleiben unverändert. Controller verwenden IMediator; erst Handler
+  greifen auf ITreeNodeBasedDeviceManagement bzw. IDeviceCollectionContainer zu.
+  Der neue Adapter sitzt hinter diesen vorhandenen Interfaces.
+end note
+
+note bottom of AgentManagerPkg
+  Vollständiger Auszug heißt auch: alte AgentManager-Service-/Proxy-/Worker-Klassen
+  und Projektverweise auf ServiceForwardRouterPlugin.* entfernen oder ersetzen.
+  Im AgentManager bleiben nur Prozessstart und -überwachung.
+end note
+
+note as ShutdownOrder
+  <b>Plugin-Start / Shutdown</b>
+  Start: DI-Container bauen → Runtime/LeaseMonitor starten → zwei Services aus
+  Autofac auflösen und mit ServiceHostHelper hosten.
+  Stop: neue Arbeit sperren → Duplex-Verbindungen/Channels abbrechen → LeaseMonitor
+  stoppen → Hosts stoppen → Autofac-Scope disposen.
+  Registry, Lifecycle, ConnectionManager, Transmitter-Katalog, SubscriptionManager,
+  ClientEventHub, LeaseMonitor und PluginRuntime: SingleInstance; Services: AsSelf.
+end note
+ShutdownOrder .. Plugin
+
+note as ImplementationOrder
+  <b>Empfohlene Implementierungsreihenfolge</b>
+  1. Contracts, DTOs, Serialisierungstests und beide SmartProxys
+  2. Router extrahieren; Target, Broadcast und Session-Isolation ergänzen
+  3. Registry, ID-Policies, LifecycleCoordinator und LeaseMonitor
+  4. eine Duplex-Verbindung, MessageCodec, Reconnect und Cleanup
+  5. ClientService, AgentService, Hosting und DI-Lifetimes
+  6. AgentRuntime, WorkRunner, Mapper, Snapshot-Notifier und EventForwarder
+  7. Subscription-Referenzzählung, ClientEventHub und Child-Event-Erweiterung
+  8. optionale WebAPI-/Gateway-Adapter und Ende-zu-Ende-/Race-Tests
+end note
+ImplementationOrder .. DeviceIntegrationDependencyInjector
+
+@enduml

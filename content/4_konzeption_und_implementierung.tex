@@ -1,0 +1,119 @@
+\chapter{Konzeption und Implementierung}\label{ch:konzeption-implementierung}
+
+Dieses Kapitel verbindet die Entwurfsentscheidungen für das Device-Integration-Plugin mit ihrer prototypischen Umsetzung. Die Darstellung folgt den Verantwortungsbereichen des Plugins, sodass die jeweilige Lösung und ihre Implementierung gemeinsam erläutert werden können.
+
+\section{Ziel und Gesamtarchitektur}
+
+Für das Device-Integration-Plugin sind mehrere fachliche Bereiche zu unterscheiden: die Kommunikation mit Clients, die Kommunikation mit Integrationen, die Verwaltung ihrer Verfügbarkeit und Geräte sowie die Verteilung von Ereignissen. Ihre Verantwortlichkeiten sollen nicht in einer einzigen allzuständigen Komponente vermischt werden.
+
+\section{Technologische Rahmenbedingungen und Projektstruktur}
+
+\subsection{Technologische Rahmenbedingungen}
+% Hier die bislang noch nicht ausgearbeiteten technologischen Rahmenbedingungen dokumentieren.
+
+\subsection{Projekt- und Paketstruktur}
+
+Die Projekt- und Paketstruktur bildet die fachlichen und technischen Grenzen der Lösung ab. Allgemeine Contracts bleiben unabhängig von den konkreten Implementierungen der Geräteanbindung. Die Komponenten erhalten ihre Abhängigkeiten über definierte Verträge und Dependency Injection. Dadurch können sie automatisiert mit kontrollierten Testimplementierungen geprüft werden.
+
+\section{Auswahl und Nutzung des Gerätemodells}
+
+Die Anforderungen beschreiben zunächst die benötigten Gerätezugriffe: Funktionen ermitteln, Werte lesen und setzen, Methoden aufrufen sowie Änderungen abonnieren. Für die Umsetzung ist zu klären, wie diese Funktionen unabhängig vom jeweiligen Geräteprotokoll beschrieben und adressiert werden können.
+
+Mit dem TreeNode-Modell steht in der bestehenden zenLAB-Umgebung bereits ein entsprechender Ansatz zur Verfügung. Es ordnet Gerätefunktionen hierarchisch in Knoten an, die über Pfade erreichbar sind. Knoten können Werte, Methoden oder strukturelle Teile des Geräts repräsentieren. Die zugehörige Schnittstelle unterstützt außerdem das Ermitteln von Knoteninformationen und das Abonnieren von Änderungen.
+
+Die vorhandenen Operationen passen damit zu den benötigten Gerätezugriffen. Für die prototypische Anbindung bietet es sich an, diesen Ansatz über einen Adapter weiterzuverwenden, statt ein zusätzliches Gerätemodell einzuführen. Gegenstand der Arbeit ist dabei die Auswahl und Einbindung des vorhandenen Modells in das neue Plugin, nicht die Entwicklung des TreeNode-Modells selbst. Verfügbarkeitsüberwachung, Geräteverwaltung und Kommunikationslebenszyklus bleiben davon getrennte Aufgaben des Plugins.
+
+\section{Verfügbarkeits- und Lebenszyklusverwaltung}
+
+\subsection{Service Directory und Gerätekatalog}
+
+Ein zentrales Service Directory verwaltet die aktuell verfügbaren Integrationen anhand ihrer \texttt{ServiceIdentification}. Diese logische Identität dient als Routingziel und bleibt unabhängig von einzelnen Kommunikationsstreams. Eine Integration wird in das Service Directory aufgenommen, sobald alle für sie erforderlichen Methodenstreams aktiv sind. Damit bildet nicht eine separate zeitlich begrenzte Registrierung, sondern der aktuelle Streamzustand die Grundlage der Verfügbarkeit.
+
+Der \texttt{IntegrationDeviceCatalog} verwaltet davon getrennt die über jede Integration verfügbaren Geräte. Wird eine Integration verfügbar, fordert eine Synchronisationskomponente über den Auftragsmechanismus ihre Geräteliste an. Das Ergebnis wird als vollständiger Snapshot übernommen. Bei der Geräteidentifikation wird die Identität der Integration mit der Geräte-ID kombiniert, sodass gleiche lokale Geräte-IDs verschiedener Integrationen unterscheidbar bleiben.
+
+Wird eine Integration aus dem Service Directory entfernt, bricht der Synchronizer eine gegebenenfalls noch laufende Abfrage ab und entfernt alle ihr zugeordneten Geräte aus dem Katalog. Zugriffe auf Service Directory und Gerätekatalog werden jeweils synchronisiert, damit parallele Streamzustände, Geräteabfragen und Aufräumvorgänge konsistent verarbeitet werden.
+
+\subsection{Methodenstream-Tracking}
+
+Für die Kommunikation öffnet eine Integration länger bestehende Methodenstreams, über die sie Aufträge des Plugins entgegennimmt. Der Prototyp definiert den Request-Stream der Operation \texttt{GetDevices} als erforderlichen Stream. Weitere Geräteoperationen können durch zusätzliche \texttt{StreamDefinition}-Einträge in dieselbe Überwachung aufgenommen werden.
+
+Ein \texttt{TrackedStream<T>} dekoriert den zugrunde liegenden asynchronen Stream und veröffentlicht dessen Lebenszykluszustand. Mit Beginn der Enumeration wechselt er in den Zustand \texttt{Active}. Ein reguläres Streamende führt zu \texttt{Completed}; ein Abbruch zu \texttt{Canceled} und eine Ausnahme zu \texttt{Faulted}. Jeder getrackte Stream darf nur einmal enumeriert werden, damit sein Zustand eindeutig einer Verbindung zugeordnet bleibt.
+
+Der \texttt{ServiceStreamTracker} fasst die getrackten Streams einer Integration zusammen. Erst wenn alle als erforderlich definierten Streams aktiv sind, meldet er die Integration als verfügbar. Jeder terminale Zustand eines erforderlichen Streams entzieht diese Verfügbarkeit wieder. Der \texttt{StreamTrackerCoordinator} überführt die Zustandsänderungen in die Registrierung beziehungsweise Entfernung des Dienstes in der Routing-Registry.
+
+Die Einbindung in die Auftragsvermittlung erfolgt durch den Decorator \texttt{TrackedJob\-Transmitter}. Beim Öffnen eines Request-Streams übergibt er den Stream zusammen mit der Dienstidentität und der zugehörigen Streamdefinition an den Coordinator. Die fachliche Auftragsverarbeitung bleibt dadurch vom Tracking des Kommunikationslebenszyklus getrennt.
+
+\subsection{Streamabbruch, erneute Anbindung und Bereinigung}
+
+Sobald ein erforderlicher Stream endet, abgebrochen wird oder fehlschlägt, entfernt der Coordinator die betroffene Integration aus der Routing-Registry und verwirft ihren StreamTracker. Die Entfernung löst über das Service Directory die Bereinigung der zugehörigen Geräte aus. Andere Integrationen besitzen eigene Tracker und bleiben von diesem Vorgang unberührt.
+
+Öffnet dieselbe logische Integration ihre erforderlichen Streams später erneut, wird für sie ein neuer Tracker erzeugt. Bei der Verarbeitung eines Zustandswechsels prüft der Coordinator neben der Dienstidentität auch, ob die Meldung vom aktuell eingetragenen Tracker stammt. Dadurch kann ein verspäteter Callback einer vorherigen Streaminstanz keinen neu aufgebauten Zustand entfernen.
+
+\section{Auftragsvermittlung und Multi-Service-Routing}
+
+\subsection{Routing-Grundlage}
+
+Allgemeine Auftrags-, Ergebnis-, Routing- und Stream-Contracts werden von den fachlichen Geräteoperationen getrennt. Der Routing-Kern übernimmt Übertragung, Zielauflösung, Korrelation und Timeoutbehandlung. Das Device-Integration-Plugin ergänzt darauf aufbauend die Verwaltung der Integrationen und Geräte, deren Lebenszyklus sowie die Übersetzung zu den bestehenden Gerätefunktionen.
+
+\subsection{Serviceidentifikation und Routenauflösung}
+
+Der Gerätekatalog liefert die Zuordnung zwischen einem Gerät und der aktuell zuständigen Integration. Die Routingkomponente löst die aktive Route zum Sendezeitpunkt auf und übergibt den Auftrag an den zugehörigen Kommunikationskanal. Ist keine gültige Route vorhanden, wird der Auftrag mit einem definierten Fehler beendet.
+
+Beim Unicast-Routing wird ein Auftrag an genau eine adressierte Integration weitergeleitet. Ein Broadcast erzeugt dagegen Teilaufträge für mehrere aktive Integrationen. Die zugehörigen Teilergebnisse werden unter Berücksichtigung einzelner Fehler und eines Gesamttimeouts zu einem Ergebnis zusammengeführt.
+
+\subsection{Job-Korrelation}
+
+Für einen wartenden Auftrag wird ein Korrelationszustand angelegt. Ein eingehendes Ergebnis wird nur dann angenommen, wenn Auftragskennung und logische Integration mit dem erwarteten Auftrag übereinstimmen. Ergebnisse mit unbekannter oder bereits abgeschlossener Kennung werden verworfen und können für Diagnosezwecke protokolliert werden.
+
+\subsection{Fehler- und Timeoutbehandlung}
+
+Ein konfigurierbares Timeout begrenzt die Wartezeit auf ein Ergebnis und entfernt anschließend den zugehörigen Korrelationszustand. Trifft ein Ergebnis verspätet ein, kann es keinem gültigen Auftrag mehr zugeordnet werden und verändert den bereits abgeschlossenen Ablauf nicht.
+
+\subsection{Implementierung der Routing-Grundlage und des Multi-Service-Routings}
+% Zusammengeführt aus den beiden bisherigen Implementierungsabschnitten; noch auszuarbeiten.
+
+\section{Contracts und Dienstschnittstellen}
+
+\subsection{Job-, Ergebnis- und Stream-Contracts}
+
+Transportbezogene und fachliche Datentypen werden voneinander getrennt. Allgemeine Contracts beschreiben Aufträge, Ergebnisse, Routinginformationen und Streams. Die Contracts für Gerätezugriffe enthalten dagegen Gerätepfade, Werte, Methodenparameter und Ereignisse. Interne Implementierungsdetails werden nicht Bestandteil der öffentlich verwendeten Verträge.
+% Die bisher noch leere Beschreibung der Contract-Implementierung wird hier ergänzt.
+
+\subsection{Serviceverträge und SmartProxys}
+
+Der SmartProxy stellt der aufrufenden Komponente ein lokales Objekt mit demselben fachlichen Vertrag wie der entfernte Dienst zur Verfügung. Er kapselt Verbindungsaufbau, Serialisierung und Remote-Aufruf gegenüber dem Aufrufer.
+
+\subsection{Code-first gRPC und Umsetzung der Dienstschnittstellen}
+
+Für die interne Kommunikation wird code-first gRPC eingesetzt. Dadurch können die .NET-Komponenten gemeinsame Dienst- und Nachrichtenverträge verwenden. Neben einzelnen Anfrage-Antwort-Aufrufen werden die für länger bestehende Kommunikationswege erforderlichen Streamingformen unterstützt.
+% Die bislang noch nicht ausgearbeitete Implementierung der Serviceverträge und SmartProxys folgt hier.
+
+\section{Integration Client und Anbindung bestehender DeviceAgents}
+
+\subsection{Adapter für das gewählte Gerätemodell}
+
+Das Adapter-Prinzip ermöglicht die Verwendung einer bestehenden Komponente über eine im neuen Kontext benötigte Schnittstelle \cite{gammaDesignPatterns}. Für das gewählte Gerätemodell nimmt der Integrationsadapter transportierte Aufträge entgegen und bildet sie auf die vorhandene Schnittstelle \texttt{ITreeNodesBasedDeviceAgent} ab. Nach der Ausführung übersetzt er Ergebnisse, Fehler und Ereignisse zurück in die gemeinsamen Kommunikationsverträge. Der Adapter enthält keine gerätespezifische Fachlogik; diese verbleibt im angebundenen DeviceAgent.
+
+\subsection{Implementierung des Integration Clients und des Adapters}
+% Zusammengeführt aus den bisherigen, noch leeren Implementierungsabschnitten.
+
+\section{Subscriptions und Ereignisweitergabe}
+
+Für eine von mehreren Clients abonnierte Ereignisquelle wird ein gemeinsames vorgelagertes Abonnement eingerichtet. Weitere Clients werden als zusätzliche Empfänger derselben Quelle registriert. Eingehende Ereignisse werden anschließend an alle aktuell zugeordneten Clients verteilt.
+
+Eine Referenzzählung bestimmt, wann das vorgelagerte Abonnement nicht mehr benötigt wird. Beendet ein Client sein Interesse, wird zunächst nur seine Zuordnung entfernt. Erst wenn kein Client mehr verbleibt, wird auch das Abonnement gegenüber der Integration aufgelöst.
+
+Getrennte und begrenzte Warteschlangen isolieren langsame Clientverbindungen voneinander und begrenzen den maximalen Speicherverbrauch. Die jeweilige Pufferstrategie richtet sich danach, ob jedes Ereignis vollständig erhalten bleiben muss oder nur der aktuelle Zustand relevant ist. Für Ereignisse derselben Subscription bleibt die Reihenfolge erhalten.
+
+\subsection{Prototypische Umsetzung der Subscriptions}
+% Vorhandener Gliederungspunkt aus dem bisherigen Implementierungskapitel; noch auszuarbeiten.
+
+\section{Einbindung in zenLAB und Referenzintegration}
+
+\subsection{Einbindung in zenLAB}
+
+\subsection{Anbindung eines Referenz-DeviceAgents}
+
+\section{Herausforderungen während der Umsetzung}
+
+\section{Begründung zentraler Entwurfsentscheidungen}

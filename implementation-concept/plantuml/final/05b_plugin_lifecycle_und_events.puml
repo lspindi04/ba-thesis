@@ -1,0 +1,95 @@
+@startuml
+title DeviceIntegrationPlugin - Serviceverfügbarkeit und Device-Synchronisierung
+
+top to bottom direction
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "StreamTracking" {
+  interface IServiceAvailabilityMonitor {
+    +ServiceAvailable : IObservable<ServiceIdentification>
+    +ServiceUnavailable : IObservable<ServiceIdentification>
+  }
+  class ServiceStreamTracker {
+    +Availability : IObservable<bool>
+    +Terminate()
+  }
+  class StreamTrackerCoordinator {
+    +ServiceAvailable : IObservable<ServiceIdentification>
+    +ServiceUnavailable : IObservable<ServiceIdentification>
+    +TrackStream(service, endpoint, stream)
+    +RemoveService(service)
+  }
+}
+
+package "Routing" {
+  interface IServiceRouteRegistry
+  class ServiceDirectory
+}
+
+package "DeviceIntegrationPlugin" {
+  class IntegrationDeviceCatalogSynchronizer {
+    -HandleServiceAvailable(service)
+    -HandleServiceUnavailable(service)
+  }
+
+  interface IIntegrationDeviceCatalog {
+    +GetAvailableDevices()
+    +PublishDeviceSnapshot(service, devices)
+    +RemoveServiceDevices(service)
+    +ApplyDeviceEvent(service, event) <<geplant>>
+  }
+
+  class IntegrationDeviceCatalog {
+    -devices : Dictionary<IntegrationDeviceId, IntegrationDeviceDto>
+  }
+
+  class DeviceIntegrationJobTransmitters
+  interface IJobFacade
+
+}
+
+StreamTrackerCoordinator o-- ServiceStreamTracker
+StreamTrackerCoordinator ..|> IServiceAvailabilityMonitor
+StreamTrackerCoordinator --> IServiceRouteRegistry
+ServiceDirectory ..|> IServiceRouteRegistry
+
+IntegrationDeviceCatalog ..|> IIntegrationDeviceCatalog
+IntegrationDeviceCatalogSynchronizer --> IServiceAvailabilityMonitor : beobachtet Verfügbarkeit
+IntegrationDeviceCatalogSynchronizer --> IJobFacade
+IntegrationDeviceCatalogSynchronizer --> DeviceIntegrationJobTransmitters
+IntegrationDeviceCatalogSynchronizer --> IIntegrationDeviceCatalog
+IntegrationDeviceCatalogSynchronizer --> StreamTrackerCoordinator : bei Aktivierungsfehler entfernen
+
+note right of IntegrationDeviceCatalogSynchronizer
+  ServiceAvailable:
+  1. GetDevices gezielt abrufen
+  2. PublishDeviceSnapshot
+
+  ServiceUnavailable:
+  1. RemoveServiceDevices
+
+  Schlägt der Initialsnapshot fehl, wird der Service
+  vollständig aus dem StreamTracking entfernt.
+end note
+
+note right of IntegrationDeviceCatalog
+  Enthält nur veröffentlichte Devices.
+  Die ServiceDirectory bleibt die einzige Quelle
+  für aktuell routbare Services und bleibt unverändert.
+end note
+
+note bottom of StreamTrackerCoordinator
+  Ersetzt die technische Stream-/Connection-Verantwortung
+  des bisherigen IntegrationLifecycleCoordinator.
+  Er verwendet nur das vorhandene IServiceRouteRegistry.
+  Device-Synchronisierung und Router bleiben davon getrennt.
+end note
+
+note bottom of IIntegrationDeviceCatalog
+  Events können später den bereits veröffentlichten Zustand
+  aktualisieren. Das Subscribe-/Unsubscribe-Routing verwendet
+  direkt die vorhandene IJobFacade und benötigt keinen zweiten Hub.
+end note
+@enduml

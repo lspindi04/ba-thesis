@@ -1,0 +1,31 @@
+@startuml
+title Lifecycle eines Devices innerhalb eines getrackten Service
+
+hide empty description
+
+[*] --> Unknown
+
+Unknown --> Available : PublishDeviceSnapshot
+Available --> Unavailable : ServiceUnavailable-Ereignis
+Unavailable --> Available : neuer Service-Lauf\n+ neuer Vollsnapshot
+
+Available --> Available : DeviceUpdated / Node-Event [geplant]
+Available --> Unavailable : DeviceRemoved [geplant]
+Unavailable --> Available : DeviceAdded [geplant]
+Unavailable --> [*] : Bereinigung abgeschlossen
+
+note right of Available
+  PublishDeviceSnapshot ersetzt den vollständigen
+  Snapshot dieses Service und macht ihn für Clients sichtbar.
+end note
+
+note right of Unavailable
+  RemoveServiceDevices entfernt ausschließlich Devices
+  des betroffenen Service. Andere Services laufen weiter.
+end note
+
+note bottom of Unknown
+  Der Device-Lifecycle reagiert auf Service-Ereignisse,
+  kennt aber keine Streams und keine ConnectionId.
+end note
+@enduml

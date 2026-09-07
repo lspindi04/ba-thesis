@@ -1,0 +1,120 @@
+@startuml
+title Device Integration – Clientseite über bestehende WebAPI
+
+left to right direction
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Bestehender Client – unverändert" {
+    class TreeNodeBasedClient
+}
+
+package "TreeNodeBased.WebAPI" {
+    class TreeNodeBasedDevicesController <<bestehend>>
+
+    class "MediatR RequestHandler" as RequestHandlers {
+        GetDevicesListRequestHandler
+        GetNodeInfoRequestHandler
+        GetValueRequestHandler
+        SetValueRequestHandler
+        CallNodeMethodRequestHandler
+        SubscribeNodeValueRequestHandler
+        UnsubscribeNodeValueRequestHandler
+    }
+
+    class WebApiDeviceIntegrationMapper {
+        +MapDevice(...)
+        +MapNodeInfo(...)
+        +MapNodeValue(...)
+        +MapMethodResult(...)
+    }
+
+    class Startup {
+        +ConfigureContainer(builder)
+    }
+}
+
+package "DeviceIntegrationPlugin.Client.Contracts" {
+    interface IDeviceIntegrationService {
+        +GetDevices(request, context)
+        +GetNodeInfo(request, context)
+        +GetTreePathInfo(request, context)
+        +ReadValue(request, context)
+        +WriteValue(request, context)
+        +ExecuteCommand(request, context)
+        +SubscribeNodeValueChanges(request, context)
+        +UnsubscribeNodeValueChanges(request, context)
+    }
+
+    class DeviceIntegrationServiceProxy <<SmartProxy>>
+
+    DeviceIntegrationServiceProxy ..|> IDeviceIntegrationService
+}
+
+package "DeviceIntegrationPlugin" {
+    class DeviceIntegrationService <<gRPC-Service>>
+
+    interface IIntegrationDeviceCatalog {
+        +GetAvailableDevices()
+        +GetDevice(deviceId)
+        +IsDeviceAvailable(deviceId)
+    }
+
+    class DeviceIntegrationJobTransmitters {
+        +GetNodeInfo
+        +GetTreePathInfo
+        +ReadValue
+        +WriteValue
+        +ExecuteCommand
+        +SubscribeNodeValueChanges
+        +UnsubscribeNodeValueChanges
+    }
+}
+
+package "ServiceForwardRouter" {
+    interface IJobFacade
+    interface "IJobTransmitter<TRequest,TResult>" as IJobTransmitter
+}
+
+TreeNodeBasedClient --> TreeNodeBasedDevicesController : HTTP
+TreeNodeBasedDevicesController --> RequestHandlers : MediatR
+
+RequestHandlers --> IDeviceIntegrationService
+RequestHandlers --> WebApiDeviceIntegrationMapper
+
+Startup ..> DeviceIntegrationServiceProxy : registriert
+Startup ..> IDeviceIntegrationService : Proxy als Implementierung
+
+DeviceIntegrationServiceProxy --> DeviceIntegrationService : gRPC
+DeviceIntegrationService ..|> IDeviceIntegrationService
+
+DeviceIntegrationService --> IIntegrationDeviceCatalog
+DeviceIntegrationService --> IJobFacade
+DeviceIntegrationService --> DeviceIntegrationJobTransmitters
+
+DeviceIntegrationJobTransmitters o--> IJobTransmitter
+
+note bottom of TreeNodeBasedClient
+  Keine Änderung am bestehenden Client.
+  HTTP-Routen und Response-Modelle bleiben erhalten.
+end note
+
+note bottom of RequestHandlers
+  Die Handler verwenden nicht mehr das alte
+  DeviceManagement-Routing, sondern den
+  IDeviceIntegrationService-SmartProxy.
+
+  Sie übersetzen zwischen bestehenden
+  WebAPI-Modellen und neuen Plugin-DTOs.
+end note
+
+note bottom of DeviceIntegrationService
+  GetDevices liest direkt aus dem Catalog.
+
+  Gerätebezogene Methoden prüfen das Device
+  im Catalog und rufen die JobFacade gezielt
+  mit request.DeviceId.Service auf.
+end note
+
+@enduml

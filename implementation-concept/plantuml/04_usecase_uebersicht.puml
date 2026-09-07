@@ -1,0 +1,34 @@
+@startuml
+!include theme.puml
+title Gesamtübersicht der Anwendungsfälle
+left to right direction
+actor "Client-Anwendung" as Client
+actor "Integration Client /\nDeviceAgentRuntime" as Integration
+actor "Betrieb / Administrator" as Operator
+rectangle "DeviceIntegrationPlugin" {
+  usecase "aktive Integrationen und\nDevices ermitteln" as Discover
+  usecase "TreeNode-Auftrag\nausführen" as Execute
+  usecase "Node-Ereignisse in einem\nStream je Node abonnieren" as Subscribe
+  usecase "Integration mit\nVollsnapshot registrieren" as Register
+  usecase "Duplex-Pumps vorbereiten und\nIntegration aktivieren" as Activate
+  usecase "vollständige Device-Liste\nmelden und Lease erneuern" as Notify
+  usecase "eine Duplex-Verbindung\naufrechterhalten" as Stream
+  usecase "Integration\nabmelden" as Unregister
+  usecase "Registrierungen und\nLease-Ablauf überwachen" as Monitor
+  usecase "Fehler und Status\ndiagnostizieren" as Diagnose
+  usecase "Auftrag zur aktiven\nZiel-Session routen" as Route
+}
+Client --> Discover
+Client --> Execute
+Client --> Subscribe
+Integration --> Register
+Integration --> Activate
+Integration --> Notify
+Integration --> Stream
+Integration --> Unregister
+Operator --> Monitor
+Operator --> Diagnose
+Execute .> Route : <<include>>
+Subscribe .> Route : <<include>>
+Stream .> Activate : <<include>>
+@enduml

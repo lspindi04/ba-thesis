@@ -1,0 +1,45 @@
+@startuml
+title Routing eines Client-Aufrufs über einen bereits aktiven Stream
+
+autonumber
+hide footbox
+
+actor Client
+participant "DeviceIntegrationServiceProxy\n(Client.Contracts)" as ClientProxy
+participant DeviceIntegrationService as ClientService
+participant IntegrationDeviceCatalog as Catalog
+participant JobFacade as Facade
+participant "StreamTrackingJobTransmitter\n<ReadValue>" as TrackingTx
+participant "JobTransmitter\n<ReadValue>" as InnerTx
+participant DeviceIntegrationWorkerService as WorkerService
+participant "WorkerServiceProxy\n(Integration.Contracts)" as WorkerProxy
+participant DeviceIntegrationWorker as Worker
+participant IDeviceIntegration as Integration
+
+Client -> ClientProxy : ReadValue(deviceId)
+ClientProxy -> ClientService : unary gRPC-Aufruf
+ClientService -> Catalog : ResolveService(deviceId)
+Catalog --> ClientService : service
+ClientService -> Facade : QueueJobAndWaitForResult(service, request)
+Facade -> TrackingTx : TransmitJobAndWaitForResult(...)
+TrackingTx -> InnerTx : unverändert delegieren
+InnerTx --> WorkerService : Request im vorhandenen Stream
+WorkerService --> WorkerProxy : gRPC-Nachricht
+WorkerProxy --> Worker : JobRequest<ReadValueRequest>
+Worker -> Integration : ReadValue(request, token)
+Integration --> Worker : value
+Worker -> WorkerProxy : SendReadValueResult(result)
+WorkerProxy -> WorkerService : unary gRPC-Aufruf
+WorkerService -> TrackingTx : NotifyJobResult(result)
+TrackingTx -> InnerTx : unverändert delegieren
+InnerTx --> Facade : korreliertes Ergebnis
+Facade --> ClientService : value
+ClientService --> ClientProxy : gRPC-Antwort
+ClientProxy --> Client : value
+
+note over TrackingTx,Worker
+  Der ReadValue-Stream wurde beim Start einmal geöffnet und
+  durch TrackedStream<T> dekoriert. Pro Auftrag entsteht keine neue
+  Verbindung und kein neuer Methodenstream.
+end note
+@enduml

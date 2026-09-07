@@ -1,0 +1,84 @@
+@startuml
+!include theme.puml
+title Hauptablauf: Registrierung, Aktivierungsbarriere, Vollsnapshot-Lease und TreeNode-Auftrag
+autonumber
+
+participant "DeviceIntegrationAgentRuntime\n+ bestehender DeviceAgent" as Runtime
+participant "AgentServiceProxy\nSmartProxy / gRPC-Client" as AgentProxy
+participant "AgentService +\nConnectionManager" as AgentService
+participant "Registry + Lifecycle +\nSessionTerminator" as Registry
+participant "TransmitterCatalog +\nJobFacade" as Router
+participant "ClientService im Plugin" as ClientService
+participant "ClientServiceProxy\nSmartProxy / gRPC-Client" as ClientProxy
+participant "WebAPI-Adapter\nLow Priority / Out of Scope" as WebAdapter
+participant "TreeNodeBased.WebAPI\nüber unveränderten Client" as WebApi
+
+Runtime -> Runtime : Metadaten + vollständige Device-Liste ermitteln
+Runtime -> AgentProxy : RegisterIntegration(metadata, fullDeviceList)
+AgentProxy -> AgentService : gRPC unary
+AgentService -> Registry : ServiceId atomar reservieren\nRegistrationId anlegen, State=Connecting
+note right of Registry
+  Connecting-Registrierungen und ihre Devices
+  sind für Client-Routing noch unsichtbar.
+end note
+Registry --> AgentService : Registrierung
+AgentService --> AgentProxy : ServiceId, RegistrationId, UpdateInterval,\nToleranz, PluginVersion + DeviceAssignments
+AgentProxy --> Runtime : RegistrationResponse;\nAgentDeviceKey -> kanonische DeviceId atomar übernehmen
+
+Runtime -> AgentProxy : Connect(outgoingMessages)
+AgentProxy -> AgentService : bidirektionaler gRPC-Stream\nerster Frame: Connect(RegistrationId)
+note right of AgentProxy
+  Builder mit WithOneShotClient; GetStream mit try/finally abgesichert:
+  Streamende erreicht AgentRuntime; kein Retry und kein unbounded Zwischenkanal.
+end note
+AgentService -> Registry : Connecting-Session validieren
+AgentService -> AgentService : doppelte Verbindung atomar ablehnen
+AgentService -> Router : PrepareSessionAtomically(alle 9 Operationen; noch unsichtbar)
+Router -> AgentService : alle Request-Pumps Ready
+AgentService -> AgentService : ConnectionAccepted als ersten Frame\nin leeren FIFO-Outbox committen
+AgentService -> Registry : unter gemeinsamem ActivationGate:\nRouter CommitSession + Registry TryActivate
+Registry --> AgentService : Active; neue Jobs werden hinter Handshake eingereiht
+AgentService --> AgentProxy : garantiert erster Server-Frame: ConnectionAccepted
+AgentProxy --> Runtime : Verbindung aktiv
+
+loop im vorgegebenen Intervall und zusätzlich bei Device-Änderung
+  Runtime -> Runtime : immer vollständige aktuelle Device-Liste lesen
+  Runtime -> AgentProxy : NotifyDeviceList(RegistrationId, fullDeviceList)
+  AgentProxy -> AgentService : gRPC unary
+  AgentService -> Registry : Snapshot atomar ersetzen, Diff bilden,\nLeaseRevision erhöhen und DeviceAssignments erzeugen
+  AgentService -> AgentService : entfernte Device-Subscriptions bereinigen
+  AgentService --> AgentProxy : vollständiges AgentDeviceKey -> DeviceId-Mapping
+  AgentProxy --> Runtime : AssignmentMap atomar ersetzen
+end
+
+WebApi -> WebApi : vorhandener TreePathResolver präfixt BrowseName
+WebApi -> WebAdapter : bestehendes ITreeNodeBasedDeviceManagement
+WebAdapter -> ClientProxy : GetValue(deviceId, fullAgentTreePath)
+ClientProxy -> ClientService : gRPC unary
+ClientService -> Registry : TryResolveActiveDevice(deviceId)
+Registry --> ClientService : ServiceSessionKey(ServiceId, RegistrationId)
+ClientService -> Router : QueueJobAndWaitForResult(target, request)
+Router -> AgentService : JobRequest verlustfrei in bounded Channel
+AgentService --> AgentProxy : PluginToIntegrationMessage(JobRequest)
+AgentProxy --> Runtime : Auftrag in begrenzten WorkScheduler einreihen
+Runtime -> Runtime : DeviceAgent.GetNodeValue(vollständiger Agent-TreePath)
+Runtime --> AgentProxy : IntegrationToPluginMessage(JobResult)
+AgentProxy --> AgentService : gleicher Duplex-Stream
+AgentService --> Router : Resultat nur bei passender RegistrationId + JobId
+Router --> ClientService : NodeValueDto
+ClientService --> ClientProxy : gRPC response
+ClientProxy --> WebAdapter : NodeValueDto
+WebAdapter --> WebApi : bestehendes Ergebnisformat
+
+alt explizite Abmeldung, Streamende, Lease-Timeout oder Plugin-Shutdown
+  AgentService -> Registry : gemeinsamer idempotenter SessionTerminator
+  Registry -> Registry : bei Timeout LeaseRevision + Zeit atomar erneut prüfen
+  Registry -> Router : Session, wartende Jobs und Pumps entfernen
+  Registry -> Registry : Devices, Subscriptions, Channels und ServiceId freigeben
+  note right of Runtime
+    Bei Streamverlust AgentSessionRuntime vollständig disposen.
+    Frische Outbox, Scheduler, EventForwarder und neue RegistrationId erzeugen;
+    danach einen neuen Duplex-Stream öffnen.
+  end note
+end
+@enduml

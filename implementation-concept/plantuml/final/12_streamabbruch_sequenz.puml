@@ -1,0 +1,54 @@
+@startuml
+title Abbruch eines verpflichtenden Methodenstreams
+
+autonumber
+hide footbox
+
+participant "TrackedStream<T>" as TrackedStream
+participant ServiceStreamTracker as ServiceTracker
+participant StreamTrackerCoordinator as Coordinator
+participant ServiceDirectory as Directory
+participant IntegrationDeviceCatalogSynchronizer as Synchronizer
+participant IntegrationDeviceCatalog as Catalog
+participant DeviceIntegrationWorker as Worker
+participant IntegrationWorkerSupervisor as Supervisor
+participant DeviceIntegrationHost as Host
+
+alt Server schließt den Stream regulär
+  TrackedStream -> ServiceTracker : State = Completed
+else Benutzer / Host beendet den Stream
+  TrackedStream -> ServiceTracker : State = Canceled
+else Transport oder Verarbeitung schlägt fehl
+  TrackedStream -> ServiceTracker : State = Faulted
+end
+
+ServiceTracker -> ServiceTracker : Availability = false
+ServiceTracker -> ServiceTracker : alle übrigen TrackedStreams Terminate()
+ServiceTracker -> Coordinator : Availability = false
+
+alt Tracker ist noch der aktuelle Tracker dieses Services
+  Coordinator -> Directory : UnregisterService(service)
+  Coordinator -> Synchronizer : ServiceUnavailable(service)
+  Synchronizer -> Catalog : RemoveServiceDevices(service)
+else Ereignis stammt von einer ersetzten Tracker-Instanz
+  Coordinator -> Coordinator : veraltetes Ereignis ignorieren
+end
+
+TrackedStream --> Worker : Stream endet / Exception
+Worker --> Supervisor : Worker-Task endet
+Supervisor -> Supervisor : CancelAllWorkers()
+Supervisor --> Host : Service-Lauf beendet
+Host -> Supervisor : nach Reconnect-Verzögerung RunService(...)
+
+note over ServiceTracker,Catalog
+  Ein einzelner Pflichtstream reicht aus, um den gesamten
+  Service nicht verfügbar zu machen. Andere Services und
+  deren Devices bleiben davon unberührt.
+end note
+
+note over Coordinator
+  Es wird keine öffentliche ConnectionId benötigt:
+  Die Identität der aktuellen ServiceStreamTracker-Instanz
+  dient intern als Verbindungsgeneration.
+end note
+@enduml

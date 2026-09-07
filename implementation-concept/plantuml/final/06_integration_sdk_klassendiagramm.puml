@@ -1,0 +1,149 @@
+@startuml
+title Integration SDK - endgültiges Zielbild
+
+top to bottom direction
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Integration" {
+  class IntegrationCompositionRoot <<Autofac>> {
+    +ConfigureContainer(builder)
+    +StartAsync()
+    +StopAsync()
+  }
+
+  class SingleDeviceIntegration <<Beispiel>>
+}
+
+package "Device Integration SDK - öffentliche API" {
+  interface IDeviceIntegration {
+    +GetDevices(token) : Task<IntegrationDeviceDto[]>
+    +GetNodeInfo(request, token) <<geplant>>
+    +ReadValue(request, token) <<geplant>>
+    +WriteValue(request, token) <<geplant>>
+    +ExecuteCommand(request, token) <<geplant>>
+    +DeviceEvent : event EventHandler<IntegrationDeviceEventDto> <<geplant>>
+  }
+
+  class DeviceIntegrationSdkModule <<Autofac Module>> {
+    -service : ServiceIdentification
+    -agentClientBuilder : IClientBuilder
+    -reconnectDelay : TimeSpan
+    +DeviceIntegrationSdkModule(service, agentClientBuilder, reconnectDelay = default)
+    #Load(builder)
+  }
+
+  class DeviceIntegrationHost <<Lifecycle-Einstiegspunkt>> {
+    -supervisor : IntegrationWorkerSupervisor
+    -reconnectDelay : TimeSpan
+    +Service : ServiceIdentification
+    +Start()
+    +StopAsync()
+    +DisposeAsync()
+    -RunAsync(token)
+  }
+}
+
+package "Device Integration SDK - intern" {
+  class IntegrationWorkerSupervisor <<internal>> {
+    +RunService(service, token)
+    -CancelAllWorkers(tasks, cancellation)
+  }
+
+  class DeviceIntegrationWorker <<internal>> {
+    +StartService(service, tasks, token)
+  }
+}
+
+package "DeviceIntegrationPlugin.Integration.Contracts" {
+  class DeviceIntegrationAgentServiceProxy <<SmartProxy>>
+
+  interface IDeviceIntegrationAgentService {
+    +ListenForGetDevicesRequests(service, context)
+    +SendGetDevicesResult(result, context)
+  }
+
+  DeviceIntegrationAgentServiceProxy ..|> IDeviceIntegrationAgentService
+}
+
+package "ServiceForwardRouter.JobsProcessing" {
+  class PluginJobProcessingModule <<Autofac Module>>
+  interface IWorkRunner
+  interface IEventWorkRunnerFactory
+  interface "IEventWorkRunner<TEvent>" as IEventWorkRunner
+
+  IEventWorkRunnerFactory ..> IEventWorkRunner : erzeugt
+}
+
+package "zenLAB Remoting" {
+  interface IClientBuilder
+}
+
+SingleDeviceIntegration ..|> IDeviceIntegration
+
+IntegrationCompositionRoot ..> IDeviceIntegration : registriert Implementierung
+IntegrationCompositionRoot ..> ServiceIdentification : erstellt
+IntegrationCompositionRoot ..> IClientBuilder : konfiguriert Agent-Endpunkt
+IntegrationCompositionRoot ..> DeviceIntegrationSdkModule : RegisterModule(service, agentClientBuilder, delay)
+IntegrationCompositionRoot --> DeviceIntegrationHost : Resolve + Start/Stop
+
+DeviceIntegrationSdkModule --> ServiceIdentification
+DeviceIntegrationSdkModule --> IClientBuilder : dedizierter Agent-Builder
+DeviceIntegrationSdkModule ..> DeviceIntegrationHost : registriert SingleInstance
+DeviceIntegrationSdkModule ..> IntegrationWorkerSupervisor : registriert
+DeviceIntegrationSdkModule ..> DeviceIntegrationAgentServiceProxy : registriert
+DeviceIntegrationSdkModule ..> PluginJobProcessingModule : lädt
+
+DeviceIntegrationHost --> ServiceIdentification
+DeviceIntegrationHost --> IntegrationWorkerSupervisor : RunService
+
+IntegrationWorkerSupervisor --> DeviceIntegrationWorker : erzeugt pro Service-Lauf
+
+DeviceIntegrationWorker --> IDeviceIntegration
+DeviceIntegrationWorker --> IDeviceIntegrationAgentService
+DeviceIntegrationWorker --> IWorkRunner : Methoden-Jobs
+DeviceIntegrationWorker --> IEventWorkRunnerFactory : Event-Jobs
+
+DeviceIntegrationAgentServiceProxy --> IClientBuilder
+
+note right of DeviceIntegrationSdkModule
+  Das Modul wird in den vorhandenen Container
+  der Integration geladen. Es erstellt keinen eigenen
+  Container und registriert weder Runtime noch HostFactory.
+
+  ServiceIdentification, AgentClientBuilder und die optionale
+  Reconnect-Verzögerung werden direkt übergeben.
+
+  Der AgentClientBuilder wird mit WithOneShotClient konfiguriert,
+  nur zum Erstellen des DeviceIntegrationAgentServiceProxy verwendet
+  und nicht global als IClientBuilder registriert.
+end note
+
+note right of IntegrationCompositionRoot
+  Die Integration besitzt den Autofac-Container.
+  Sie registriert ihre IDeviceIntegration-Implementierung,
+  konfiguriert den Agent-Endpunkt und lädt das SDK-Modul.
+end note
+
+note bottom of DeviceIntegrationHost
+  Langfristiger Lifecycle:
+  Start, Stopp und Reconnect.
+  Reconnect bedeutet den vollständigen Wiederaufbau aller
+  Pflichtstreams derselben ServiceIdentification.
+  Der Host besitzt keinen Container und kennt keine Methodendetails.
+end note
+
+note bottom of IntegrationWorkerSupervisor
+  Ein Service-Lauf:
+  Startet die vollständige Worker-Gruppe, wartet auf den ersten
+  beendeten Pflichtstream und beendet die übrigen Worker.
+end note
+
+note bottom of DeviceIntegrationWorker
+  Methodenverdrahtung:
+  Verbindet GetDevices und alle späteren Integrationsmethoden
+  mit IWorkRunner oder IEventWorkRunner.
+end note
+
+@enduml

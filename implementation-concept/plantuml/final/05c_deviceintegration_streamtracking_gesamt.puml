@@ -1,0 +1,248 @@
+@startuml
+title Device Integration Plugin
+
+top to bottom direction
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "DeviceIntegrationPlugin.Integration.Contracts" {
+  class DeviceIntegrationAgentServiceProxy <<SmartProxy>>
+
+  interface IDeviceIntegrationAgentService {
+    +ListenForGetDevicesRequests(service, context)
+    +SendGetDevicesResult(result, context)
+  }
+
+  DeviceIntegrationAgentServiceProxy ..|> IDeviceIntegrationAgentService
+}
+
+package "DeviceIntegrationPlugin.Client.Contracts" {
+  class DeviceIntegrationServiceProxy <<SmartProxy>>
+
+  interface IDeviceIntegrationService {
+    +GetDevices(request, context)
+  }
+
+  DeviceIntegrationServiceProxy ..|> IDeviceIntegrationService
+}
+
+package "DeviceIntegrationPlugin.Contracts" {
+  interface IIntegrationDeviceCatalog {
+    +GetAvailableDevices()
+    +SetServiceDevices(service, devices)
+    +RemoveServiceDevices(service)
+  }
+}
+
+package "ServiceForwardRouter (Registry-Ereignisse ergänzt)" {
+  interface IJobFacade
+
+  interface "IJobTransmitter<TRequest,TResult>" as IJobTransmitter {
+    +GetRequestStream(service, token)
+    +GetResultStream(service, token)
+    +TransmitJob(request)
+    +TransmitJobAndWaitForResult(request, token)
+    +NotifyJobResult(result)
+    +NotifyEventResult(result)
+  }
+
+  interface IServiceDirectory {
+    +ServiceRegistered : IObservable<ServiceIdentification>
+    +ServiceUnregistered : IObservable<ServiceIdentification>
+    +GetConnectedServices()
+    +IsConnected(service)
+  }
+
+  interface IServiceRouteRegistry {
+    +RegisterService(service)
+    +UnregisterService(service)
+  }
+}
+
+package "DeviceIntegrationPlugin.StreamTracking.Contracts" {
+  class StreamDefinition <<Value Object>> {
+    +Name : string
+  }
+
+  interface ITrackedStream {
+    +CurrentState : StreamState
+    +State : IObservable<StreamState>
+  }
+
+  interface "ITrackedStream<T>" as ITrackedStreamT
+
+  enum StreamState {
+    Active
+    Completed
+    Canceled
+    Faulted
+  }
+
+}
+
+interface "IAsyncEnumerable<T>" as IAsyncEnumerableT <<.NET>> {
+  +GetAsyncEnumerator(token)
+}
+
+interface IDisposable <<.NET>> {
+  +Dispose()
+}
+
+package "DeviceIntegrationPlugin" {
+  class DeviceIntegrationService <<gRPC-Service>>
+
+  class IntegrationDeviceCatalog {
+    -devices : Dictionary<IntegrationDeviceId, IntegrationDeviceDto>
+    +GetAvailableDevices()
+    +SetServiceDevices(service, devices)
+    +RemoveServiceDevices(service)
+  }
+
+  class IntegrationDeviceCatalogSynchronizer {
+    -subscriptions : IDisposable
+    -HandleServiceRegistered(service)
+    -HandleServiceUnregistered(service)
+    +Dispose()
+  }
+
+  class DeviceIntegrationAgentService <<gRPC-Service>>
+
+  class DeviceIntegrationJobTransmitters {
+    +GetDevices : IJobTransmitter<EmptyDto, IntegrationDeviceDto[]>
+  }
+
+  class "TrackedJobTransmitter<TRequest,TResult>" as TrackedJobTransmitter <<Decorator>> {
+    -inner : IJobTransmitter<TRequest,TResult>
+    -coordinator : StreamTrackerCoordinator
+    -definition : StreamDefinition
+    +GetRequestStream(service, token)
+    +GetResultStream(service, token)
+    +TransmitJob(request)
+    +TransmitJobAndWaitForResult(request, token)
+    +NotifyJobResult(result)
+    +NotifyEventResult(result)
+  }
+}
+
+package "DeviceIntegrationPlugin.StreamTracking" {
+  class "TrackedStream<T>" as TrackedStreamT {
+    -inner : IAsyncEnumerable<T>
+    -termination : CancellationTokenSource
+    +CurrentState : StreamState
+    +State : IObservable<StreamState>
+    +GetAsyncEnumerator(token)
+    +Dispose()
+  }
+
+  class StreamTrackerCoordinator {
+    -serviceTrackers : Dictionary<ServiceIdentification, ServiceStreamTracker>
+    -requiredStreams : IReadOnlySet<StreamDefinition>
+    +TrackStream<T>(service, definition, stream) : ITrackedStream<T>
+    +RemoveService(service)
+    +Dispose()
+    -HandleAvailability(tracker, available)
+  }
+
+  class ServiceStreamTracker {
+    -requiredStreams : IReadOnlySet<StreamDefinition>
+    -trackedStreams : Dictionary<StreamDefinition, ITrackedStream>
+    +Availability : IObservable<bool>
+    +Service : ServiceIdentification
+    +TrackStream<T>(definition, stream) : ITrackedStream<T>
+    +Dispose()
+    -ContainsStream(definition) : bool
+    -HandleStreamState(definition, state)
+  }
+}
+
+IntegrationDeviceCatalog ..|> IIntegrationDeviceCatalog
+
+DeviceIntegrationService ..|> IDeviceIntegrationService
+DeviceIntegrationAgentService ..|> IDeviceIntegrationAgentService
+
+ITrackedStreamT --|> ITrackedStream
+ITrackedStreamT --|> IAsyncEnumerableT
+ITrackedStream --|> IDisposable
+TrackedStreamT ..|> ITrackedStreamT
+
+DeviceIntegrationService --> IIntegrationDeviceCatalog
+
+DeviceIntegrationAgentService --> DeviceIntegrationJobTransmitters
+
+IntegrationDeviceCatalogSynchronizer --> IIntegrationDeviceCatalog
+IntegrationDeviceCatalogSynchronizer ..|> IDisposable
+IntegrationDeviceCatalogSynchronizer --> IServiceDirectory : observes registration
+IntegrationDeviceCatalogSynchronizer --> IJobFacade
+IntegrationDeviceCatalogSynchronizer --> DeviceIntegrationJobTransmitters
+
+DeviceIntegrationJobTransmitters o--> IJobTransmitter : GetDevices
+
+TrackedJobTransmitter ..|> IJobTransmitter
+IJobTransmitter --|> IDisposable
+TrackedJobTransmitter o--> IJobTransmitter : inner
+TrackedJobTransmitter --> StreamTrackerCoordinator
+TrackedJobTransmitter --> StreamDefinition : identifies method
+
+StreamTrackerCoordinator *-- "0..*" ServiceStreamTracker : serviceTrackers
+StreamTrackerCoordinator --> IServiceRouteRegistry
+StreamTrackerCoordinator ..|> IDisposable
+StreamTrackerCoordinator o--> StreamDefinition : requiredStreams
+
+ServiceStreamTracker ..> TrackedStreamT : creates
+ServiceStreamTracker o--> ITrackedStream : tracks
+ServiceStreamTracker ..|> IDisposable
+ServiceStreamTracker o--> StreamDefinition : keys by method
+
+TrackedStreamT --> StreamState
+
+IServiceRouteRegistry --|> IServiceDirectory
+
+note right of TrackedJobTransmitter
+  Jede Decorator-Instanz steht für genau eine Methode
+  und besitzt dafür genau eine StreamDefinition.
+  Aktive Streams speichert ausschließlich der
+  jeweilige ServiceStreamTracker.
+
+  Nur GetRequestStream wird getrackt.
+  Alle anderen IJobTransmitter-Methoden
+  werden unverändert an inner delegiert.
+
+  Die Composition liefert diesen Decorator
+  als IJobTransmitter an DeviceIntegrationJobTransmitters.
+end note
+
+note bottom of ServiceStreamTracker
+  Die StreamDefinition ist innerhalb dieses Trackers eindeutig.
+  Damit kann jeder Service einen eigenen GetDevices-Stream haben,
+  derselbe Service GetDevices aber nicht doppelt öffnen.
+
+  Verfügbar ist der Service, wenn für jede requiredStreams-
+  Definition ein getrackter Stream im Zustand Active existiert.
+end note
+
+note bottom of StreamDefinition
+  Kein Enum und kein aktiver Stream.
+  Eine Definition identifiziert nur eine Pflichtmethode,
+  beispielsweise GetDevices. Die Composition stellt dieselbe
+  Definition dem Decorator und dem Coordinator bereit.
+end note
+
+note bottom of IntegrationDeviceCatalog
+  SetServiceDevices ersetzt den vollständigen
+  Device-Snapshot des angegebenen Service.
+end note
+
+note bottom of StreamTrackerCoordinator
+  Registriert einen Service, sobald alle Pflichtstreams aktiv sind,
+  und entfernt ihn beim Ende eines Pflichtstreams wieder.
+  Die ServiceDirectory veröffentlicht diese Änderungen.
+end note
+
+note bottom of IServiceDirectory
+  ServiceRegistered wird nur nach erfolgreichem RegisterService,
+  ServiceUnregistered nur nach erfolgreichem UnregisterService ausgelöst.
+  Die eigentliche Job-Routing-Logik bleibt unverändert.
+end note
+
+@enduml

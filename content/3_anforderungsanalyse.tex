@@ -1,28 +1,93 @@
-\chapter{Anforderungsanalyse}
+\chapter{Anforderungsanalyse}\label{ch:anforderungsanalyse}
+
 \section{Ausgangssituation}
+
 \subsection{Analyse der bestehenden Kommunikationsarchitektur}
+
+DeviceAgents stellen die Funktionen der angebundenen Geräte bereit und können in eigenen Prozessen ausgeführt werden. Ein gestarteter Prozess ist jedoch nicht zwangsläufig bei einer zentralen Integrationskomponente registriert und erreichbar. Umgekehrt kann eine Kommunikationsverbindung unterbrochen sein, obwohl der Prozess weiterhin ausgeführt wird.
+
+Das zu entwickelnde Plugin muss feststellen können, welche Integrationen sich aktuell angemeldet haben, welche Geräte sie bereitstellen und ob ihre Kommunikationsverbindung noch gültig ist. Die gerätespezifische Kommunikation verbleibt dabei in den bestehenden DeviceAgents.
+
+Clientanwendungen greifen über eine bestehende Clientbibliothek auf die WebAPI zu. Auftragsbezogene Operationen werden über HTTP und ereignisbasierte Informationen über SignalR übertragen. Diese bereits verwendete Systemgrenze bildet den Ausgangspunkt für die Einordnung des Device-Integration-Plugins.
+
 \subsection{Grenzen der bisherigen Serviceanbindung}
 
+Mit mehreren gleichzeitig aktiven DeviceAgents kann nicht mehr davon ausgegangen werden, dass jeder Auftrag automatisch an denselben Empfänger übertragen wird. Es muss bekannt sein, welche Integrationen und Geräte aktuell erreichbar sind und über welche Verbindung ein bestimmtes Gerät angesprochen werden kann.
+
+Prozessstart und Prozessüberwachung allein reichen hierfür nicht aus. Die für eine Integration erforderlichen Kommunikationsstreams können regulär enden, abgebrochen werden oder aufgrund eines Fehlers ausfallen, obwohl der zugehörige Prozess weiterhin ausgeführt wird. Solche Zustandsänderungen und eine erneute Anbindung müssen deshalb unabhängig vom Betriebssystemprozess behandelt werden. Gleichzeitig darf ein beendeter Stream einer vorherigen Verbindung den Zustand neu geöffneter Streams nicht beeinflussen.
+
 \section{Zielsystem und Rahmenbedingungen}
+
 \subsection{Beteiligte Akteure und Komponenten}
+
+Eine Integration bezeichnet eine eigenständig kommunizierende Softwarekomponente, die dem Plugin ein oder mehrere Geräte zur Verfügung stellt. Ein DeviceAgent kann eine solche Integration bilden oder an eine entsprechende Laufzeitkomponente angebunden werden. Ein Gerät bezeichnet dagegen die fachliche Einheit, deren Funktionen von Clients verwendet werden.
+
+Eine Integration besitzt eine logische Identität, über die sie systemweit unterschieden werden kann. Ihre aktuelle Verfügbarkeit ergibt sich dagegen aus den für sie geöffneten Kommunikationsstreams. Nach einem Neustart oder einer erneuten Verbindung kann dieselbe logische Integration diese Streams neu aufbauen.
+
 \subsection{Bestehende Client- und WebAPI-Grenze}
+
+Clientbibliothek und WebAPI sollen als bestehende Systemgrenze erhalten bleiben. Die WebAPI bleibt für webbezogene Aufgaben zuständig, während das Device-Integration-Plugin hinter dieser Grenze die Verwaltung und Vermittlung der Integrationen und Geräte übernimmt.
+
 \subsection{Minimaler Funktionsumfang}
 
 \section{Funktionale Anforderungen}
-\subsection{Registrierung und eindeutige Identifikation}
+
+\subsection{Verfügbarkeit und eindeutige Identifikation}
+
+Dynamisch verfügbare Integrationen müssen sich gegenüber dem System eindeutig identifizieren und die für ihre Funktionen erforderlichen Methodenstreams öffnen. Eine Integration darf erst dann als verfügbar geführt werden, wenn sämtliche verpflichtenden Streams aktiv sind. Die logische Identität muss dabei unabhängig von einer einzelnen Streaminstanz erhalten bleiben.
+
+Auch Geräte benötigen eine eindeutige Identität. Ein Client soll ein Gerät unabhängig davon adressieren können, über welche technische Verbindung seine Integration gerade kommuniziert. Zustandsänderungen vorheriger Streaminstanzen dürfen nicht als Zustandsänderungen neu geöffneter Streams derselben Integration behandelt werden.
+
 \subsection{Verwaltung von Integrationen und Devices}
-\subsection{Heartbeat, Reconnect und Deregistrierung}
+
+Das Plugin muss eine aktuelle Sicht auf die verfügbaren Integrationen und deren Geräte bereitstellen. Es muss ermitteln können, ob die erforderlichen Methodenstreams einer Integration aktiv sind und welche Geräte über sie erreichbar sind.
+
+Gerätelisten sind nicht notwendigerweise statisch. Eine Integration kann während ihrer Laufzeit weitere Geräte erkennen oder bisher verfügbare Geräte verlieren. Änderungen der Geräteliste müssen daher konsistent übernommen werden. Streamzustände, Geräteaktualisierungen, Clientzugriffe und Aufräumvorgänge können gleichzeitig auftreten; ein Client darf kein Gerät erhalten, dessen Integration bereits als nicht verfügbar entfernt wurde.
+
+\subsection{Methodenstreams, Verbindungsabbruch und erneute Anbindung}
+
+Die Verfügbarkeit einer Integration muss an den Lebenszyklus ihrer erforderlichen Methodenstreams gekoppelt werden. Endet einer dieser Streams regulär, wird er abgebrochen oder schlägt er mit einem Fehler fehl, darf die Integration nicht länger als erreichbares Routingziel geführt werden.
+
+Beim Verlust der Verfügbarkeit müssen die zugehörigen Gerätezuordnungen, offenen Aufträge, Kommunikationskanäle und Subscriptions bereinigt werden. Öffnet dieselbe logische Integration ihre erforderlichen Methodenstreams erneut, darf ein nachträglicher Zustandswechsel einer vorherigen Streaminstanz den neuen Zustand nicht verändern.
+
 \subsection{Routing von Client-Aufträgen}
+
+Jeder gerätebezogene Auftrag muss an die aktuell zuständige Integration vermittelt werden können. Ist das Gerät unbekannt, die Integration nicht aktiv oder keine gültige Route mehr vorhanden, muss der Zugriff mit einem nachvollziehbaren Fehler beendet werden.
+
+Mehrere parallele Aufträge und ihre Ergebnisse müssen eindeutig zugeordnet werden können. Ergebnisse mit unbekannter oder bereits abgeschlossener Auftragskennung dürfen nicht einem anderen Auftrag zugewiesen werden.
+
 \subsection{SmartProxy und gRPC-Servicevertrag}
-\subsection{Bereitstellung von TreeNode-Funktionen}
+
+\subsection{Bereitstellung von Gerätefunktionen}
+
+Bestehende DeviceAgents sollen weiterverwendet werden. Clients müssen verfügbare Gerätefunktionen ermitteln, Werte lesen und setzen, Methoden aufrufen sowie Abonnements anlegen und beenden können. Die fachliche Bedeutung der Gerätefunktionen und die eigentliche Hardwarekommunikation verbleiben im DeviceAgent. Welche Darstellung und Schnittstelle diese Zugriffe innerhalb des Plugins unterstützen, wird im Lösungskonzept begründet.
+
 \subsection{Abonnieren von Wertänderungen}
 
+Clients müssen Geräteänderungen abonnieren und wieder abbestellen können. Zwischen Einrichtung und Beendigung eines Abonnements können mehrere Ereignisse eintreffen, die dem jeweils interessierten Client zugeordnet werden müssen.
+
+Mehrere Clients können dieselbe Ereignisquelle abonnieren. Endet eine Clientverbindung oder wird eine Integration aufgrund eines beendeten Methodenstreams entfernt, müssen die zugehörigen Abonnement- und Kommunikationszustände freigegeben werden.
+
 \section{Nicht-funktionale Anforderungen}
+
 \subsection{Wiederverwendbarkeit}
+
+Gemeinsam verwendete Auftrags-, Ergebnis- und Kommunikationsverträge sollen nicht von der Implementierung eines einzelnen DeviceAgents abhängig sein. Die technische Vermittlung darf keine gerätespezifische Fachlogik enthalten.
+
 \subsection{Erweiterbarkeit}
+
 \subsection{Zuverlässigkeit}
+
+Timeouts und Abbrüche müssen wartende Operationen kontrolliert beenden. Verspätete Ergebnisse dürfen bereits abgeschlossene Abläufe nicht nachträglich verändern. Aufräumvorgänge müssen auch bei mehreren nahezu gleichzeitig auftretenden Ursachen zu einem konsistenten Endzustand führen.
+
 \subsection{Nebenläufigkeit}
+
+Gemeinsam verwendete Stream-, Verfügbarkeits-, Geräte- und Abonnementzustände müssen bei parallelen Zugriffen konsistent bleiben. Eine langsame Clientverbindung darf die Verarbeitung für andere Empfänger nicht unbegrenzt blockieren. Für Ereignisse derselben Quelle muss eine definierte Reihenfolge gewährleistet werden können.
+
 \subsection{Performance}
 
+Der Ressourcenbedarf für länger bestehende Streams und Ereignispuffer muss begrenzt werden können. Wenn eine Ereignisquelle dauerhaft mehr Elemente erzeugt, als ein Empfänger verarbeitet, darf dies nicht zu einem unbegrenzten Anwachsen des Speicherverbrauchs führen.
+
 \section{Abgrenzung}
+
 \section{Zusammenfassung der Anforderungen}

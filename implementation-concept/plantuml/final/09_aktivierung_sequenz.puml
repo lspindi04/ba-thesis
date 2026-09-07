@@ -1,0 +1,65 @@
+@startuml
+title Aktivierung eines Integrationsservices durch seine Methodenstreams
+
+autonumber
+hide footbox
+
+participant "DeviceIntegrationWorker" as Worker
+participant "WorkerServiceProxy\n(Integration.Contracts)" as Proxy
+participant "DeviceIntegrationWorkerService" as WorkerService
+participant "StreamTrackingJobTransmitter\n<GetDevices>" as TrackingTx
+participant "JobTransmitter\n<GetDevices>" as InnerTx
+participant "StreamTrackerCoordinator" as Coordinator
+participant "ServiceStreamTracker" as ServiceTracker
+participant "ServiceDirectory" as Directory
+participant "IntegrationDeviceCatalogSynchronizer" as Synchronizer
+participant "JobFacade" as Facade
+participant "IDeviceIntegration" as Integration
+participant "IntegrationDeviceCatalog" as Catalog
+
+Worker -> Proxy : ListenForGetDevicesRequests(service)
+Proxy -> WorkerService : gRPC-Stream öffnen
+WorkerService -> TrackingTx : GetRequestStream(service, token)
+TrackingTx -> InnerTx : GetRequestStream(service, token)
+InnerTx --> TrackingTx : IAsyncEnumerable<JobRequest<EmptyDto>>
+TrackingTx -> Coordinator : TrackStream(service, GetDevices, requestStream)
+Coordinator -> ServiceTracker : GetOrCreate(service) und TrackStream(...)
+ServiceTracker --> Coordinator : TrackedStream<JobRequest<EmptyDto>>
+Coordinator --> TrackingTx : TrackedStream
+TrackingTx --> WorkerService : TrackedStream als IAsyncEnumerable
+WorkerService --> Proxy : gRPC-Nachrichtenstrom
+Proxy --> Worker : Stream
+
+Worker -> Worker : Stream lesen
+ServiceTracker -> ServiceTracker : Zustand GetDevices = Active
+
+alt alle verpflichtenden Methodenstreams sind Active
+  ServiceTracker -> Coordinator : Availability = true
+  Coordinator -> Directory : RegisterService(service)
+  Coordinator -> Synchronizer : ServiceAvailable(service)
+  Synchronizer -> Facade : GetDevices gezielt an service
+  Facade -> InnerTx : Request in bestehenden Stream einstellen
+  InnerTx --> WorkerService : JobRequest<EmptyDto>
+  WorkerService --> Proxy : gRPC-Nachricht
+  Proxy --> Worker : JobRequest<EmptyDto>
+  Worker -> Integration : GetDevices(token)
+  Integration --> Worker : devices
+  Worker -> Proxy : SendGetDevicesResult(result)
+  Proxy -> WorkerService : unary gRPC-Aufruf
+  WorkerService -> TrackingTx : NotifyJobResult(result)
+  TrackingTx -> InnerTx : delegieren
+  InnerTx --> Facade : korreliertes Ergebnis
+  Facade --> Synchronizer : devices
+  Synchronizer -> Catalog : PublishDeviceSnapshot(service, devices)
+else mindestens ein verpflichtender Stream fehlt
+  note over ServiceTracker,Directory
+    Der Service ist noch nicht routbar und es wird
+    noch kein Device-Snapshot abgerufen.
+  end note
+end
+
+note over TrackingTx,InnerTx
+  Der Decorator verändert Jobrouting und Korrelation nicht.
+  Er ergänzt nur das Tracking des ausgegebenen Request-Streams.
+end note
+@enduml

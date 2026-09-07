@@ -1,0 +1,22 @@
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 12
+skinparam defaultFontName Segoe UI
+skinparam defaultFontSize 14
+skinparam ArrowColor #2E74B5
+skinparam ArrowThickness 2
+skinparam ComponentBorderColor #2E74B5
+skinparam ComponentBackgroundColor #E8F1F8
+skinparam PackageBorderColor #2AA7B8
+skinparam PackageBackgroundColor #FBFCFE
+skinparam ClassBorderColor #2E74B5
+skinparam ClassBackgroundColor #FFFFFF
+skinparam ClassHeaderBackgroundColor #E8F1F8
+skinparam SequenceParticipantBorderColor #2E74B5
+skinparam SequenceParticipantBackgroundColor #E8F1F8
+skinparam NoteBackgroundColor #FFF7E6
+skinparam NoteBorderColor #A16207
+skinparam titleFontColor #183B56
+skinparam titleFontSize 22
+skinparam titleFontStyle bold
+

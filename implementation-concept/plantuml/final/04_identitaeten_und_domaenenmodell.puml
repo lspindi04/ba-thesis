@@ -1,0 +1,82 @@
+@startuml
+title Identitäten und Stream-Domänenmodell
+
+left to right direction
+skinparam classAttributeIconSize 0
+hide empty members
+
+class ServiceIdentification {
+  +Id : string
+}
+
+enum IntegrationStreamEndpoint {
+  GetDevices
+  GetNodeInfo
+  ReadValue
+  WriteValue
+  ExecuteCommand
+  SubscribeEvents
+  UnsubscribeEvents
+}
+
+enum StreamState {
+  Active
+  Completed
+  Canceled
+  Faulted
+}
+
+class IntegrationDeviceId {
+  +Service : ServiceIdentification
+  +DeviceId : Guid
+}
+
+class IntegrationDeviceDto {
+  +Identification : IntegrationDeviceId
+  +DisplayName : string
+  +Metadata : DeviceMetadataEntryDto[]
+}
+
+class DeviceMetadataEntryDto {
+  +Key : string
+  +Value : string
+}
+
+class DeviceNodeAddressDto <<geplant>> {
+  +Device : IntegrationDeviceId
+  +Path : string
+}
+class DeviceNodeValueDto <<geplant>>
+class DeviceNodeInfoDto <<geplant>>
+class DeviceCommandResultDto <<geplant>>
+class IntegrationDeviceEventDto <<geplant>>
+
+IntegrationDeviceId --> ServiceIdentification
+IntegrationDeviceDto --> IntegrationDeviceId
+IntegrationDeviceDto *-- "0..*" DeviceMetadataEntryDto
+DeviceNodeAddressDto --> IntegrationDeviceId
+IntegrationDeviceEventDto --> IntegrationDeviceId
+
+note top of ServiceIdentification
+  Stabile fachliche Identität einer Integration
+  und eindeutiges Ziel des Routings.
+end note
+
+note bottom of ServiceIdentification
+  Im Zielbild gibt es keine öffentliche ConnectionId.
+  Pro Service ist nur ein ServiceStreamTracker zugelassen.
+  Dessen Instanz repräsentiert intern den aktuellen
+  Verbindungsversuch und schützt vor alten Streamereignissen.
+end note
+
+note bottom of IntegrationStreamEndpoint
+  Alle aufgeführten Methodenstreams sind Pflichtstreams.
+  Die expliziten Kennungen verhindern, dass ein doppelter
+  Stream fälschlich einen fehlenden Stream ersetzt.
+end note
+
+note bottom of StreamState
+  Richtungsneutrale Zustände. Stream bedeutet hier
+  ein auf IAsyncEnumerable<T> basierender Nachrichtenstrom.
+end note
+@enduml

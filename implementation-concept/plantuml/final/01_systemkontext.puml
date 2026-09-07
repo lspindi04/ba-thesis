@@ -1,0 +1,63 @@
+@startuml
+title Device Integration - Systemkontext und getrennte Proxy-Verträge
+
+left to right direction
+skinparam componentStyle rectangle
+skinparam linetype ortho
+
+package "Clientprozess" {
+  component "TreeNodeBasedClient\n(unverändert)" as TreeClient
+  component "TreeNodeBased.WebAPI\n(unverändert)" as WebApi
+  component "ASP.NET Core Adapter\nLow Priority / Out of Scope" as Adapter #F3F3F3
+  component "Client.Contracts\nDeviceIntegrationServiceProxy" as ClientProxy
+}
+
+package "DeviceIntegrationPlugin" {
+  component "DeviceIntegrationService\nClient-Endpunkt" as ClientService
+  component "DeviceIntegrationWorkerService\nIntegrations-Endpunkt" as WorkerService
+  component "Device Catalog\n+ Catalog Synchronizer" as Devices
+  component "StreamTracking" as Tracking
+  component "generisches Routing" as Routing
+}
+
+package "Integrationsprozess" {
+  component "Integration.Contracts\nDeviceIntegrationWorkerServiceProxy" as WorkerProxy
+  component "Integration SDK\nHost + Supervisor + Worker" as Sdk
+  component "IDeviceIntegration" as Integration
+  component "Geräteanbindung" as Backend
+}
+
+package "Shared Contracts" {
+  component "Device-DTOs\n+ ServiceIdentification" as SharedContracts
+}
+
+TreeClient --> WebApi
+WebApi --> Adapter
+Adapter --> ClientProxy
+ClientProxy --> ClientService : gRPC
+ClientService --> Devices
+
+Sdk --> WorkerProxy
+WorkerProxy --> WorkerService : gRPC-Methodenstreams\n+ Result-Aufrufe
+WorkerService --> Routing
+WorkerService --> Tracking
+Tracking --> Routing : vorhandenes IServiceRouteRegistry
+Tracking --> Devices : ServiceAvailable / ServiceUnavailable
+
+Sdk --> Integration : fachlicher Vertrag
+Integration --> Backend
+
+ClientProxy ..> SharedContracts
+WorkerProxy ..> SharedContracts
+ClientService ..> SharedContracts
+WorkerService ..> SharedContracts
+
+note bottom of ClientProxy
+  Ein Client kennt ausschließlich den Clientvertrag.
+end note
+
+note bottom of WorkerProxy
+  Das Integration SDK kennt ausschließlich den Integrationsvertrag.
+  Die konkrete IDeviceIntegration kennt den Proxy nicht.
+end note
+@enduml

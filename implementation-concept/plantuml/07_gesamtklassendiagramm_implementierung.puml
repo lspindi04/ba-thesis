@@ -1,0 +1,155 @@
+@startuml
+!include theme.puml
+title DeviceIntegrationPlugin – kompaktes Klassendiagramm des MVP-Kerns
+top to bottom direction
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+skinparam nodesep 20
+skinparam ranksep 26
+hide circle
+hide empty members
+
+package "DeviceIntegration.Contracts" as Contracts {
+  interface IDeviceIntegrationClientService {
+    +GetIntegrationsAsync(...)
+    +GetDevicesAsync(...)
+    +TreeNode-Operationen(...)
+    +WatchNodeEvents(...)
+    +UnsubscribeAsync(...)
+  }
+
+  interface IDeviceIntegrationAgentService {
+    +RegisterIntegrationAsync(...)
+    +NotifyDeviceListAsync(...)
+    +Connect(messages)
+    +UnregisterIntegrationAsync(...)
+  }
+
+  class DeviceIntegrationClientServiceProxy <<SmartProxy / gRPC-Client>>
+  class DeviceIntegrationAgentServiceProxy <<SmartProxy / gRPC-Client>>
+}
+
+package "DeviceIntegration.Plugin" as PluginPkg {
+  class DeviceIntegrationPlugin <<MEF / Composition Root>>
+  class DeviceIntegrationClientService <<dünner gRPC-Service>>
+  class DeviceIntegrationAgentService <<dünner gRPC-Service>>
+
+  class DeviceRegistry {
+    +Register(...)
+    +ReplaceSnapshot(...)
+    +ResolveActiveDevice(deviceId)
+    +Remove(session)
+  }
+
+  class IntegrationLifecycleCoordinator {
+    +Register(...)
+    +RenewLease(...)
+    +Activate(session)
+    +Terminate(session, reason)
+  }
+
+  class IntegrationConnectionManager {
+    +Open(session, stream)
+    +Send(session, message)
+    +Close(session)
+  }
+
+  class DeviceOperationDispatcher {
+    +ExecuteAsync(operation, request, token)
+  }
+
+  class SubscriptionManager {
+    +WatchNodeEvents(...)
+    +Unsubscribe(...)
+    +RemoveSession(...)
+  }
+}
+
+package "ServiceForwardRouter.Core\n(aus AgentManager herauslösen)" as RouterCore {
+  interface IJobFacade <<bestehenden Kern weiterentwickeln>> {
+    +RouteAsync(target, request, token)
+    +BroadcastAsync(request, token)
+  }
+
+  class "MultiServiceJobTransmitter<TRequest,TResult>" as Transmitter {
+    +Attach(session, stream)
+    +Detach(session)
+    +TransmitAsync(target, request, token)
+  }
+}
+
+package "DeviceIntegration.AgentSdk" as AgentSdk {
+  class DeviceIntegrationAgentRuntime {
+    +RegisterAndConnectAsync()
+    +StopAsync()
+  }
+
+  class AgentSessionRuntime <<eine Instanz je Registrierung>> {
+    +RunAsync()
+    +DisposeAsync()
+  }
+
+  interface ITreeNodesBasedDeviceAgent <<bestehend>>
+  interface IMultipleDevicesAgent <<bestehend>>
+}
+
+DeviceIntegrationClientServiceProxy ..|> IDeviceIntegrationClientService
+DeviceIntegrationAgentServiceProxy ..|> IDeviceIntegrationAgentService
+DeviceIntegrationClientService ..|> IDeviceIntegrationClientService
+DeviceIntegrationAgentService ..|> IDeviceIntegrationAgentService
+
+DeviceIntegrationPlugin *-- DeviceIntegrationClientService : hostet
+DeviceIntegrationPlugin *-- DeviceIntegrationAgentService : hostet
+
+DeviceIntegrationClientService --> DeviceRegistry
+DeviceIntegrationClientService --> DeviceOperationDispatcher
+DeviceIntegrationClientService --> SubscriptionManager
+DeviceIntegrationAgentService --> IntegrationLifecycleCoordinator
+DeviceIntegrationAgentService --> IntegrationConnectionManager
+
+IntegrationLifecycleCoordinator --> DeviceRegistry
+IntegrationLifecycleCoordinator --> IntegrationConnectionManager
+IntegrationLifecycleCoordinator --> SubscriptionManager
+IntegrationLifecycleCoordinator --> Transmitter
+DeviceOperationDispatcher --> DeviceRegistry
+DeviceOperationDispatcher --> IJobFacade
+SubscriptionManager --> DeviceOperationDispatcher
+IJobFacade --> Transmitter
+
+DeviceIntegrationAgentRuntime *-- "0..1" AgentSessionRuntime
+DeviceIntegrationAgentRuntime *-- DeviceIntegrationAgentServiceProxy
+AgentSessionRuntime --> ITreeNodesBasedDeviceAgent : TreeNode-Aufträge
+AgentSessionRuntime --> IMultipleDevicesAgent : Vollsnapshot / Events
+DeviceIntegrationAgentServiceProxy <--> DeviceIntegrationAgentService : ein Duplex-Stream
+
+note bottom of PluginPkg
+  <b>Bewusst lean</b>
+  • Services enthalten nur Transportlogik und delegieren an Use-Case-Klassen.
+  • Registry ist zunächst in-memory; eine verteilte Registry ist kein MVP-Ziel.
+  • Eine Lifecycle-Klasse bündelt Register, Lease, Streamende und Cleanup.
+  • Interne Helper werden erst extrahiert, wenn eine echte zweite Verantwortung entsteht.
+end note
+
+note bottom of RouterCore
+  Nur die stabile Router-Fassade ist Abhängigkeit des Plugins.
+  Channels, JobFactory, Korrelation und Timeouts bleiben interne Details.
+end note
+
+note bottom of AgentSdk
+  AgentSessionRuntime enthält sitzungsbezogene Daten, bounded Queue,
+  Cancellation, Device-ID-Zuordnung und Eventweiterleitung.
+  Konkrete DeviceAgents und ihre Gerätekommunikation bleiben erhalten.
+end note
+
+note as Principles
+  <b>Clean Code / SOLID / Best Practices</b>
+  • Interfaces nur an echten Prozess- oder Modulgrenzen
+  • Composition over Inheritance und Dependency Injection im Composition Root
+  • kleine Use-Case-Methoden, sprechende Namen, keine God Classes
+  • Erweiterung neuer Operationen über Dispatcher und Router, ohne bestehende Grenzen zu ändern
+  • YAGNI: Gateway, WebAPI-Adapter und generische Zusatzschichten bleiben außerhalb des MVP
+end note
+Principles .. DeviceIntegrationPlugin
+
+@enduml
